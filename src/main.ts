@@ -354,7 +354,6 @@ function runGame(appEl: HTMLElement): void {
     mobileCommandBtn.classList.toggle("mobile-command-btn--armed", mobileCommandMode);
     mobileCommandBtn.textContent = mobileCommandMode ? "Tap Target" : "Command";
   });
-  appEl.appendChild(mobileCommandBtn);
   /** Set when the render loop starts so load/setup time does not eat the countdown. */
   let matchStartAtMs = 0;
 
@@ -448,6 +447,7 @@ function runGame(appEl: HTMLElement): void {
   const rightHudStack = document.createElement("div");
   rightHudStack.className = "right-hud-stack moonrise-right-console";
   rightHudStack.appendChild(missionHelpPanel);
+  rightHudStack.appendChild(mobileCommandBtn);
   const missionHelpToggle = missionHelpPanel.querySelector<HTMLButtonElement>(".mission-help-toggle");
   const missionHelpAction = missionHelpPanel.querySelector<HTMLElement>(".mission-help-action");
   missionHelpToggle?.addEventListener("click", () => {

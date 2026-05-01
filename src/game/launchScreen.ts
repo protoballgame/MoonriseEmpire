@@ -316,46 +316,77 @@ export function mountLaunchScreen(launchRoot: HTMLElement, _appEl: HTMLElement, 
 
   async function refreshOpenRooms(): Promise<void> {
     const roomsUrl = matchRoomsHttpUrl(matchServerWsUrl());
-    if (!roomsUrl) {
-      openRoomsEl.textContent = "Room list unavailable.";
-      return;
-    }
     openRoomsEl.textContent = "Checking for rooms...";
     try {
+      if (!roomsUrl) throw new Error("rooms_url_unavailable");
       const res = await fetch(roomsUrl);
       if (!res.ok) throw new Error(`rooms_${res.status}`);
       const data = (await res.json()) as { rooms?: OpenRoom[] };
-      const rooms = Array.isArray(data.rooms) ? data.rooms : [];
-      if (rooms.length === 0) {
-        openRoomsEl.innerHTML = `<p class="launch-screen__rooms-empty">No rooms waiting right now. Host one and others will see it here.</p>`;
-        return;
-      }
-      openRoomsEl.replaceChildren(
-        ...rooms.map((entry) => {
-          const code = normalizeRoomCode(String(entry.room ?? ""));
-          const waitingFor = entry.waitingFor === "p1" ? "p1" : "p2";
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "launch-screen__room-row";
-          btn.innerHTML = `<span class="launch-screen__room-code">${code}</span><span class="launch-screen__room-status">Join as ${waitingFor.toUpperCase()}</span>`;
-          btn.addEventListener("click", () => {
-            roomField.value = code;
-            roomId = code;
-            refreshJoinUrl();
-            const q = preservedParamsMinusMatchSeat();
-            q.set("match", "pvp");
-            q.set("seat", waitingFor);
-            q.set("room", roomId);
-            q.set("matchWs", matchServerWsUrl());
-            q.set("terrain", pvpTerrain);
-            writeSearchAndStart(q);
-          });
-          return btn;
-        })
-      );
+      renderOpenRooms(Array.isArray(data.rooms) ? data.rooms : []);
     } catch {
-      openRoomsEl.innerHTML = `<p class="launch-screen__rooms-empty">Could not reach the room list. You can still host or join by room code.</p>`;
+      try {
+        renderOpenRooms(await listOpenRoomsViaWebSocket(matchServerWsUrl()));
+      } catch {
+        openRoomsEl.innerHTML = `<p class="launch-screen__rooms-empty">Could not reach the room list. You can still host or join by room code.</p>`;
+      }
     }
+  }
+
+  function renderOpenRooms(rooms: OpenRoom[]): void {
+    if (rooms.length === 0) {
+      openRoomsEl.innerHTML = `<p class="launch-screen__rooms-empty">No rooms waiting right now. Host one and others will see it here.</p>`;
+      return;
+    }
+    openRoomsEl.replaceChildren(
+      ...rooms.map((entry) => {
+        const code = normalizeRoomCode(String(entry.room ?? ""));
+        const waitingFor = entry.waitingFor === "p1" ? "p1" : "p2";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "launch-screen__room-row";
+        btn.innerHTML = `<span class="launch-screen__room-code">${code}</span><span class="launch-screen__room-status">Join as ${waitingFor.toUpperCase()}</span>`;
+        btn.addEventListener("click", () => {
+          roomField.value = code;
+          roomId = code;
+          refreshJoinUrl();
+          const q = preservedParamsMinusMatchSeat();
+          q.set("match", "pvp");
+          q.set("seat", waitingFor);
+          q.set("room", roomId);
+          q.set("matchWs", matchServerWsUrl());
+          q.set("terrain", pvpTerrain);
+          writeSearchAndStart(q);
+        });
+        return btn;
+      })
+    );
+  }
+
+  function listOpenRoomsViaWebSocket(wsUrl: string): Promise<OpenRoom[]> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(wsUrl);
+      const timer = window.setTimeout(() => {
+        ws.close();
+        reject(new Error("rooms_ws_timeout"));
+      }, 5000);
+      ws.onopen = () => ws.send(JSON.stringify({ type: "list_rooms" }));
+      ws.onerror = () => {
+        window.clearTimeout(timer);
+        reject(new Error("rooms_ws_error"));
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(String(ev.data)) as { type?: unknown; rooms?: OpenRoom[] };
+          if (msg.type === "rooms") {
+            window.clearTimeout(timer);
+            ws.close();
+            resolve(Array.isArray(msg.rooms) ? msg.rooms : []);
+          }
+        } catch {
+          /* ignore non-room packets */
+        }
+      };
+    });
   }
 
   refreshJoinUrl();

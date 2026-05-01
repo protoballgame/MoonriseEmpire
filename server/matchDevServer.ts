@@ -254,6 +254,10 @@ wss.on("connection", (ws) => {
 
     const room = socketRoom.get(ws);
     const meta = room?.sockets.get(ws);
+    if (m.type === "list_rooms") {
+      ws.send(JSON.stringify({ type: "rooms", ...openRoomsPayload() }));
+      return;
+    }
     if (!room || !meta) {
       ws.send(JSON.stringify({ type: "error", reason: "send_hello_first" }));
       return;
@@ -283,7 +287,9 @@ wss.on("connection", (ws) => {
 
     if (m.type === "ping") {
       ws.send(JSON.stringify({ type: "pong", room: room.id, tick: room.state.tick }));
+      return;
     }
+
   });
 
   ws.on("close", () => {
