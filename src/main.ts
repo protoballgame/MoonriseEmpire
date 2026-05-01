@@ -129,6 +129,7 @@ function createHUD(): HTMLDivElement {
       <span class="hud-dot" aria-hidden="true">·</span>
       <span id="hudFormation">Form square</span>
     </div>
+    <div class="hud-command-action" id="hudCommandAction"></div>
     <div class="hud-idle-cycle" role="group" aria-label="Idle unit cycle">
       <button type="button" class="hud-idle-btn" id="hudIdleNeutralBtn" title="Select next idle Neutral (,). Double-tap , to focus camera.">
         <span class="hud-idle-btn__main">
@@ -354,6 +355,7 @@ function runGame(appEl: HTMLElement): void {
     mobileCommandBtn.classList.toggle("mobile-command-btn--armed", mobileCommandMode);
     mobileCommandBtn.textContent = mobileCommandMode ? "Tap Target" : "Command";
   });
+  hudRoot.querySelector<HTMLElement>("#hudCommandAction")?.appendChild(mobileCommandBtn);
   /** Set when the render loop starts so load/setup time does not eat the countdown. */
   let matchStartAtMs = 0;
 
@@ -447,7 +449,6 @@ function runGame(appEl: HTMLElement): void {
   const rightHudStack = document.createElement("div");
   rightHudStack.className = "right-hud-stack moonrise-right-console";
   rightHudStack.appendChild(missionHelpPanel);
-  rightHudStack.appendChild(mobileCommandBtn);
   const missionHelpToggle = missionHelpPanel.querySelector<HTMLButtonElement>(".mission-help-toggle");
   const missionHelpAction = missionHelpPanel.querySelector<HTMLElement>(".mission-help-action");
   missionHelpToggle?.addEventListener("click", () => {
@@ -850,14 +851,17 @@ function runGame(appEl: HTMLElement): void {
     const sid = state.structureSelections[localPlayerId]?.[0];
     if (!sid) {
       hudBuildingPanel.hidden = true;
+      hudCluster.classList.remove("hud-cluster--selection-panel-visible");
       return;
     }
     const st = state.structures.find((s) => s.id === sid);
     if (!st) {
       hudBuildingPanel.hidden = true;
+      hudCluster.classList.remove("hud-cluster--selection-panel-visible");
       return;
     }
     hudBuildingPanel.hidden = false;
+    hudCluster.classList.add("hud-cluster--selection-panel-visible");
     hudBuildingTitle.textContent = structureDisplayName(st.kind);
     const tip = structureProductionTooltip(st.kind);
     hudBuildingTip.title = tip;

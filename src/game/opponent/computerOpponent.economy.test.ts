@@ -6,6 +6,7 @@ import {
   makeStructure,
   PLAYER_OPPONENT,
   playerTeamForPlayerId,
+  structureCenter,
   type SimUnit
 } from "../../core/state/GameState";
 import {
@@ -120,6 +121,40 @@ describe("CPU economy / build rush", () => {
     const attackMove = commands.find((cmd) => cmd.type === "attack_move_units");
     expect(attackMove).toBeDefined();
     expect(attackMove?.payload?.["unitIds"]).toHaveLength(3);
+  });
+
+  it("escalates after the first CPU attack instead of repeating three-soldier raids", () => {
+    const s = pvcState();
+    addOpponentMilitary(s, ["R", "S", "P"]);
+    const commands: { type: string; payload?: Record<string, unknown> }[] = [];
+
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+    expect(commands.find((cmd) => cmd.type === "attack_move_units")?.payload?.["unitIds"]).toHaveLength(3);
+
+    commands.length = 0;
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+    expect(commands.some((cmd) => cmd.type === "attack_move_units")).toBe(false);
+  });
+
+  it("requires a mixed larger follow-up wave and attacks tech or economy after opening", () => {
+    const s = pvcState();
+    addOpponentMilitary(s, ["R", "R", "R", "R", "R", "R"]);
+    const commands: { type: string; payload?: Record<string, unknown> }[] = [];
+
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+    commands.length = 0;
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+    expect(commands.some((cmd) => cmd.type === "attack_move_units")).toBe(false);
+
+    addOpponentMilitary(s, ["S"]);
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+
+    const attackMove = commands.find((cmd) => cmd.type === "attack_move_units");
+    expect(attackMove?.payload?.["unitIds"]).toHaveLength(7);
+    const target = attackMove?.payload?.["target"] as { x: number; z: number };
+    const humanHome = s.structures.find((st) => st.playerId === "p1" && st.kind === "home")!;
+    const homeCenter = structureCenter(humanHome);
+    expect(Math.hypot(target.x - homeCenter.x, target.z - homeCenter.z)).toBeGreaterThan(1);
   });
 
   it("queues multiple soldier types when extra resources and barracks are available", () => {

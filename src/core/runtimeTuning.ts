@@ -9,8 +9,9 @@ import {
   unitMaxHpForKind
 } from "./goldenScale";
 
-/** Paper attack range (m). Neutral ranged uses ÷φ so it stays shorter but still golden-linked. */
+/** Paper attack range (m). Neutral ranged uses ÷√φ so it stays shorter but clearly ranged. */
 const PAPER_ATTACK_RANGE = 4.0;
+const NEUTRAL_ATTACK_RANGE = PAPER_ATTACK_RANGE / Math.sqrt(PHI);
 /**
  * Rock must stay **above** `collision.minCenterDistance` so melee can still land after overlap
  * resolution; otherwise Rock sits just outside `attackRange` vs Paper/S/R while Scissors (longer
@@ -103,7 +104,7 @@ const DEFAULT_TUNING: RuntimeTuning = {
     N: {
       hp: unitMaxHpForKind("N"),
       speed: (2.5 + UNIT_SPEED_STEP) * UNIT_MOVEMENT_SPEED_MULTIPLIER,
-      range: PAPER_ATTACK_RANGE / PHI,
+      range: NEUTRAL_ATTACK_RANGE,
       visionRange: 10,
       damage: unitDamageForKind("N"),
       cooldown: unitCooldownForKind("N"),

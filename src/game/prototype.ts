@@ -54,8 +54,11 @@ const MOON_SPIN_MAX_PITCH_RAD = Math.PI / 4;
 const VIEWPORT_PLANET_LOWER_BIAS_METERS = 3.8;
 const INITIAL_CAMERA_DISTANCE = 68;
 const HOME_OVERVIEW_CAMERA_DISTANCE = 72;
+const MOBILE_CAMERA_DISTANCE_SCALE = 1.16;
 const HOME_OVERVIEW_CAMERA_PHI = 0.04;
 const HOME_OVERVIEW_CAMERA_THETA = 0;
+const TOUCH_PINCH_MIN_DELTA_PX = 8;
+const TOUCH_PINCH_MIN_RATIO_DELTA = 0.025;
 
 function isSceneLitSurfaceMat(
   m: THREE.Material | THREE.Material[]
@@ -264,6 +267,11 @@ export class PrototypeView {
   /** 0 = camera along +surface normal (over anchor); approaches π/2 as view tilts toward horizon. */
   private cameraOrbitPhi = 0.9;
   private cameraDistance = INITIAL_CAMERA_DISTANCE;
+  private readonly coarseViewportCameraScale =
+    typeof window !== "undefined" &&
+    (window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(max-width: 700px)").matches)
+      ? MOBILE_CAMERA_DISTANCE_SCALE
+      : 1;
   private readonly cameraTarget = new THREE.Vector3(0, 0, 0);
   private readonly keys: Record<string, boolean> = {};
   private lastHomeKeyDownMs = 0;
@@ -397,6 +405,11 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
     this.renderer = renderer;
     this.options = options;
     this.fogGrid = new FogOfWarGrid();
+    this.cameraDistance = THREE.MathUtils.clamp(
+      INITIAL_CAMERA_DISTANCE * this.coarseViewportCameraScale,
+      tuning.camera.zoomMin,
+      tuning.camera.zoomMax
+    );
 
     this.onRmbCanvasMove = this.handleRmbCanvasMove.bind(this);
     this.onRmbCanvasUp = this.handleRmbCanvasUp.bind(this);
@@ -1970,26 +1983,35 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
       ev.preventDefault();
       this.activeTouchPointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
       if (this.activeTouchPointers.size >= 2) {
+        let cameraChanged = false;
         const centroid = this.currentTouchCentroid();
         if (centroid && this.touchGesturePrevCentroid) {
           const dx = centroid.x - this.touchGesturePrevCentroid.x;
           const dy = centroid.y - this.touchGesturePrevCentroid.y;
           if (Math.hypot(dx, dy) > 0.25) {
             this.applyMoonSpinFromScreenDelta(dx, dy);
+            cameraChanged = true;
           }
         }
         this.touchGesturePrevCentroid = centroid;
         const pinch = this.currentTouchPinchDistance();
         if (pinch !== null && this.touchPinchPrevDistance !== null && this.touchPinchPrevDistance > 1) {
+          const pinchDelta = pinch - this.touchPinchPrevDistance;
           const ratio = pinch / this.touchPinchPrevDistance;
-          this.cameraDistance = THREE.MathUtils.clamp(
-            this.cameraDistance / ratio,
-            tuning.camera.zoomMin,
-            tuning.camera.zoomMax
-          );
-          this.updateCameraTransform();
+          if (
+            Math.abs(pinchDelta) >= TOUCH_PINCH_MIN_DELTA_PX &&
+            Math.abs(ratio - 1) >= TOUCH_PINCH_MIN_RATIO_DELTA
+          ) {
+            this.cameraDistance = THREE.MathUtils.clamp(
+              this.cameraDistance / ratio,
+              tuning.camera.zoomMin,
+              tuning.camera.zoomMax
+            );
+            cameraChanged = true;
+          }
         }
         this.touchPinchPrevDistance = pinch;
+        if (cameraChanged) this.updateCameraTransform();
         return;
       }
     }
@@ -2744,7 +2766,7 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
     this.cameraOrbitTheta = HOME_OVERVIEW_CAMERA_THETA;
     this.cameraOrbitPhi = HOME_OVERVIEW_CAMERA_PHI;
     this.cameraDistance = THREE.MathUtils.clamp(
-      HOME_OVERVIEW_CAMERA_DISTANCE,
+      HOME_OVERVIEW_CAMERA_DISTANCE * this.coarseViewportCameraScale,
       tuning.camera.zoomMin,
       tuning.camera.zoomMax
     );

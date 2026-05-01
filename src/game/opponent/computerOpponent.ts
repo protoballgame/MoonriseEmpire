@@ -30,10 +30,12 @@ let constructionAssistAccumSec = 0;
 let raidMoveAccumSec = 0;
 /** Send an idle fighter wave toward map center to open fog / contest mid. */
 let scoutMilitaryAccumSec = 0;
+let cpuAttackWavesSent = 0;
 
 const CONSTRUCTION_ASSIST_ASSIGN_INTERVAL_SEC = 0.22;
 const RAID_ATTACK_MOVE_INTERVAL_SEC = 5.2;
 const CPU_ATTACK_WAVE_MIN_IDLE_MILITARY = 3;
+const CPU_ATTACK_WAVE_ESCALATED_MIN_IDLE_MILITARY = 6;
 const SCOUT_MILITARY_INTERVAL_SEC = 12;
 /** If the human is this close to the Core (world XZ), do not strip miners off combat for “economy bubble”. */
 const CPU_HOME_THREAT_SUPPRESS_REVERT_RANGE = 38;
@@ -361,6 +363,7 @@ export function resetComputerOpponentState(): void {
   cpuPostRushSolarFibStep = 4;
   cpuPostRushSolarPacingArmed = false;
   cpuBarracksFillOrder = [...BARRACKS_KINDS];
+  cpuAttackWavesSent = 0;
 }
 
 /**
@@ -383,6 +386,56 @@ function countMilitaryByKind(state: GameState, pid: string): Record<MilitaryKind
     c[u.kind] += 1;
   }
   return c;
+}
+
+function distinctRpsKinds(units: readonly SimUnit[]): number {
+  const kinds = new Set<MilitaryKind>();
+  for (const u of units) {
+    if (u.kind !== "N") kinds.add(u.kind);
+  }
+  return kinds.size;
+}
+
+function currentCpuAttackWaveMin(): number {
+  return cpuAttackWavesSent === 0
+    ? CPU_ATTACK_WAVE_MIN_IDLE_MILITARY
+    : CPU_ATTACK_WAVE_ESCALATED_MIN_IDLE_MILITARY;
+}
+
+function cpuWaveReady(units: readonly SimUnit[]): boolean {
+  if (units.length < currentCpuAttackWaveMin()) return false;
+  return cpuAttackWavesSent === 0 || distinctRpsKinds(units) >= 2;
+}
+
+function cpuRaidTargetPriority(st: SimStructure): number {
+  if (st.kind === "barracks_r" || st.kind === "barracks_s" || st.kind === "barracks_p") return 0;
+  if (st.kind === "power_spire" || st.kind === "mineral_depot") return 1;
+  if (st.kind === "defense_obelisk") return 2;
+  if (st.kind === "home") return 4;
+  return 3;
+}
+
+function pickCpuRaidTarget(state: GameState, computerPlayerId: string, rivalPlayerId: string): SimStructure | null {
+  const enemyStructures = state.structures.filter((s) => s.playerId === rivalPlayerId && s.hp > 0);
+  if (enemyStructures.length === 0) return null;
+
+  if (cpuAttackWavesSent === 0) {
+    return enemyStructures.find((s) => s.kind === "home") ?? enemyStructures[0]!;
+  }
+
+  const cpuHome = state.structures.find((s) => s.playerId === computerPlayerId && s.kind === "home" && s.hp > 0);
+  const homeCenter = cpuHome ? structureCenter(cpuHome) : { x: 0, z: 0 };
+  return enemyStructures
+    .filter((s) => s.kind !== "home")
+    .sort((a, b) => {
+      const priorityDiff = cpuRaidTargetPriority(a) - cpuRaidTargetPriority(b);
+      if (priorityDiff !== 0) return priorityDiff;
+      const ac = structureCenter(a);
+      const bc = structureCenter(b);
+      const ad = Math.hypot(ac.x - homeCenter.x, ac.z - homeCenter.z);
+      const bd = Math.hypot(bc.x - homeCenter.x, bc.z - homeCenter.z);
+      return ad - bd;
+    })[0] ?? enemyStructures.find((s) => s.kind === "home") ?? enemyStructures[0]!;
 }
 
 function findProducerForKind(state: GameState, pid: string, kind: MilitaryKind): SimStructure | null {
@@ -1030,10 +1083,11 @@ function tryComputerScoutMilitaryTowardMid(
   computerPlayerId: string,
   deltaSeconds: number
 ): void {
+  if (cpuAttackWavesSent > 0) return;
   scoutMilitaryAccumSec += deltaSeconds;
   if (scoutMilitaryAccumSec < SCOUT_MILITARY_INTERVAL_SEC) return;
   const idle = pickCpuIdleMilitary(state, computerPlayerId);
-  if (idle.length < CPU_ATTACK_WAVE_MIN_IDLE_MILITARY) return;
+  if (!cpuWaveReady(idle)) return;
   let best = idle[0]!;
   let bestD = Math.hypot(best.position.x - MAP_CONTEST_XZ.x, best.position.z - MAP_CONTEST_XZ.z);
   for (const u of idle) {
@@ -1048,6 +1102,7 @@ function tryComputerScoutMilitaryTowardMid(
     return;
   }
   scoutMilitaryAccumSec = 0;
+  cpuAttackWavesSent += 1;
   submit(
     createGameCommand(computerPlayerId, "attack_move_units", {
       target: { x: MAP_CONTEST_XZ.x, y: 0.55, z: MAP_CONTEST_XZ.z },
@@ -1073,15 +1128,13 @@ function tryComputerRaidAttackMove(
   if (!rival) return;
 
   const idleMilitary = pickCpuIdleMilitary(state, computerPlayerId);
-  if (idleMilitary.length < CPU_ATTACK_WAVE_MIN_IDLE_MILITARY) return;
+  if (!cpuWaveReady(idleMilitary)) return;
 
-  const targetHome = state.structures.find(
-    (s) => s.playerId === rival.id && s.kind === "home" && s.hp > 0
-  );
-  const target = targetHome ?? state.structures.find((s) => s.playerId === rival.id && s.hp > 0);
+  const target = pickCpuRaidTarget(state, computerPlayerId, rival.id);
   if (!target) return;
 
   raidMoveAccumSec = 0;
+  cpuAttackWavesSent += 1;
   const c = structureCenter(target);
   submit(
     createGameCommand(computerPlayerId, "attack_move_units", {
