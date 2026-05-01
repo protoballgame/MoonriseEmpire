@@ -12,7 +12,7 @@ import {
 import { mountRuntimeTuningPanel } from "./game/adminPanel";
 import type { PlaceableStructureKind } from "./core/commands/GameCommand";
 import { createHudMinimap } from "./game/hudMinimap";
-import { PrototypeView, type WorldInspectHit } from "./game/prototype";
+import { PrototypeView, type MobileTargetAction, type WorldInspectHit } from "./game/prototype";
 import { DamageNumberOverlay } from "./game/visual/damageNumberOverlay";
 import { HitFlashOverlay } from "./game/visual/hitFlashOverlay";
 import { SelectionNameplateOverlay } from "./game/visual/selectionNameplateOverlay";
@@ -280,6 +280,11 @@ function runGame(appEl: HTMLElement): void {
     <div class="hud-building-kicker" id="hudUnitKicker">Command readout</div>
     <div class="hud-building-title" id="hudUnitTitle">No Selection</div>
     <div class="hud-unit-body" id="hudUnitBody">Double Tap H to go back to Command Center.</div>
+    <div class="hud-mobile-actions" id="hudUnitMobileActions" hidden>
+      <button type="button" class="hud-mobile-action" id="hudMobileMove">Move</button>
+      <button type="button" class="hud-mobile-action" id="hudMobileAttackMove">Attack Move</button>
+      <button type="button" class="hud-mobile-action" id="hudMobileCommand">Command</button>
+    </div>
   `;
   hudCluster.appendChild(unitPanel);
 
@@ -296,6 +301,9 @@ function runGame(appEl: HTMLElement): void {
     <div class="hud-building-meta" id="hudBuildingMeta"></div>
     <div class="hud-building-queue" id="hudBuildingQueue"></div>
     <button type="button" class="hud-building-train" id="hudBuildingTrain"></button>
+    <div class="hud-mobile-actions" id="hudBuildingMobileActions" hidden>
+      <button type="button" class="hud-mobile-action" id="hudMobileRally">Set Rally</button>
+    </div>
   `;
   hudCluster.appendChild(buildingPanel);
   appEl.appendChild(hudCluster);
@@ -344,17 +352,42 @@ function runGame(appEl: HTMLElement): void {
   }
 
   let matchLive = skipCountdownForSession;
-  let mobileCommandMode = false;
+  let mobileTargetAction: MobileTargetAction | null = null;
   const mobileCommandBtn = document.createElement("button");
   mobileCommandBtn.type = "button";
   mobileCommandBtn.className = "mobile-command-btn";
   mobileCommandBtn.textContent = "Command";
   mobileCommandBtn.title = "Mobile: tap Command, then tap the moon/minimap destination to move, gather, attack, or set rally.";
-  mobileCommandBtn.addEventListener("click", () => {
-    mobileCommandMode = !mobileCommandMode;
-    mobileCommandBtn.classList.toggle("mobile-command-btn--armed", mobileCommandMode);
-    mobileCommandBtn.textContent = mobileCommandMode ? "Tap Target" : "Command";
-  });
+  const mobileActionButtons = new Map<MobileTargetAction, HTMLButtonElement[]>();
+  function registerMobileActionButton(action: MobileTargetAction, btn: HTMLButtonElement | null): void {
+    if (!btn) return;
+    btn.dataset["label"] = btn.textContent ?? "";
+    const arr = mobileActionButtons.get(action) ?? [];
+    arr.push(btn);
+    mobileActionButtons.set(action, arr);
+    btn.addEventListener("click", () => {
+      mobileTargetAction = mobileTargetAction === action ? null : action;
+      syncMobileActionButtons();
+    });
+  }
+  function mobileTargetActionLabel(action: MobileTargetAction): string {
+    if (action === "attack_move") return "Attack Target";
+    if (action === "rally") return "Rally Target";
+    if (action === "move") return "Move Target";
+    return "Tap Target";
+  }
+  function syncMobileActionButtons(): void {
+    mobileCommandBtn.classList.toggle("mobile-command-btn--armed", mobileTargetAction === "command");
+    mobileCommandBtn.textContent = mobileTargetAction === "command" ? "Tap Target" : "Command";
+    for (const [action, buttons] of mobileActionButtons) {
+      for (const btn of buttons) {
+        const armed = mobileTargetAction === action;
+        btn.classList.toggle("hud-mobile-action--armed", armed);
+        btn.textContent = armed ? mobileTargetActionLabel(action) : btn.dataset["label"] ?? btn.textContent;
+      }
+    }
+  }
+  registerMobileActionButton("command", mobileCommandBtn);
   hudRoot.querySelector<HTMLElement>("#hudCommandAction")?.appendChild(mobileCommandBtn);
   /** Set when the render loop starts so load/setup time does not eat the countdown. */
   let matchStartAtMs = 0;
@@ -592,13 +625,12 @@ function runGame(appEl: HTMLElement): void {
       inspectHit = h;
     },
     consumeMobileCommandMode: () => {
-      if (!mobileCommandMode) return false;
-      mobileCommandMode = false;
-      return true;
+      const action = mobileTargetAction;
+      mobileTargetAction = null;
+      return action;
     },
     onMobileCommandConsumed: () => {
-      mobileCommandBtn.classList.remove("mobile-command-btn--armed");
-      mobileCommandBtn.textContent = "Command";
+      syncMobileActionButtons();
     },
     focusOnLocalHome: () => focusCameraOnLocalHome(gameState)
   });
@@ -763,6 +795,10 @@ function runGame(appEl: HTMLElement): void {
   const hudUnitPanel = document.getElementById("hudUnitPanel") as HTMLElement | null;
   const hudUnitTitle = document.getElementById("hudUnitTitle");
   const hudUnitBody = document.getElementById("hudUnitBody");
+  const hudUnitMobileActions = document.getElementById("hudUnitMobileActions") as HTMLElement | null;
+  const hudMobileMove = document.getElementById("hudMobileMove") as HTMLButtonElement | null;
+  const hudMobileAttackMove = document.getElementById("hudMobileAttackMove") as HTMLButtonElement | null;
+  const hudMobileCommand = document.getElementById("hudMobileCommand") as HTMLButtonElement | null;
   const hudBuildingPanel = document.getElementById("hudBuildingPanel") as HTMLElement | null;
   const hudBuildingTitle = document.getElementById("hudBuildingTitle");
   const hudBuildingTip = document.getElementById("hudBuildingTip");
@@ -771,6 +807,13 @@ function runGame(appEl: HTMLElement): void {
   const hudBuildingMeta = document.getElementById("hudBuildingMeta");
   const hudBuildingQueue = document.getElementById("hudBuildingQueue");
   const hudBuildingTrain = document.getElementById("hudBuildingTrain") as HTMLButtonElement | null;
+  const hudBuildingMobileActions = document.getElementById("hudBuildingMobileActions") as HTMLElement | null;
+  const hudMobileRally = document.getElementById("hudMobileRally") as HTMLButtonElement | null;
+  registerMobileActionButton("move", hudMobileMove);
+  registerMobileActionButton("attack_move", hudMobileAttackMove);
+  registerMobileActionButton("command", hudMobileCommand);
+  registerMobileActionButton("rally", hudMobileRally);
+  syncMobileActionButtons();
   hudIdleNeutralBtn?.addEventListener("click", () => view.selectNextIdleNeutralUnit());
   hudIdleMilitaryBtn?.addEventListener("click", () => view.selectNextIdleMilitaryUnit());
   window.addEventListener("keydown", (ev) => {
@@ -809,21 +852,26 @@ function runGame(appEl: HTMLElement): void {
     if (!hudUnitPanel || !hudUnitTitle || !hudUnitBody) return;
     const ids = state.selections[localPlayerId] ?? [];
     if (ids.length === 0) {
+      hudUnitMobileActions?.setAttribute("hidden", "");
       if ((state.structureSelections[localPlayerId] ?? []).length > 0) {
         hudUnitPanel.hidden = true;
         return;
       }
+      hudCluster.classList.remove("hud-cluster--selection-panel-visible");
       hudUnitPanel.hidden = false;
       hudUnitTitle.textContent = "No Selection";
       hudUnitBody.textContent = "Double Tap H to go back to Command Center.";
       return;
     }
     hudUnitPanel.hidden = false;
+    hudCluster.classList.add("hud-cluster--selection-panel-visible");
     const units = ids
       .map((id) => state.units.find((u) => u.id === id))
       .filter((u): u is (typeof state.units)[number] => !!u && u.hp > 0);
     if (units.length === 0) {
       hudUnitPanel.hidden = true;
+      hudUnitMobileActions?.setAttribute("hidden", "");
+      hudCluster.classList.remove("hud-cluster--selection-panel-visible");
       return;
     }
     if (units.length === 1) {
@@ -833,6 +881,7 @@ function runGame(appEl: HTMLElement): void {
       hudUnitTitle.textContent = `${units.length} units`;
     }
     hudUnitBody.textContent = formatUnitSelectionCardBody(state, ids);
+    hudUnitMobileActions?.removeAttribute("hidden");
   }
 
   function updateBuildingPanel(state: GameState): void {
@@ -851,12 +900,16 @@ function runGame(appEl: HTMLElement): void {
     const sid = state.structureSelections[localPlayerId]?.[0];
     if (!sid) {
       hudBuildingPanel.hidden = true;
-      hudCluster.classList.remove("hud-cluster--selection-panel-visible");
+      hudBuildingMobileActions?.setAttribute("hidden", "");
+      if ((state.selections[localPlayerId] ?? []).length === 0) {
+        hudCluster.classList.remove("hud-cluster--selection-panel-visible");
+      }
       return;
     }
     const st = state.structures.find((s) => s.id === sid);
     if (!st) {
       hudBuildingPanel.hidden = true;
+      hudBuildingMobileActions?.setAttribute("hidden", "");
       hudCluster.classList.remove("hud-cluster--selection-panel-visible");
       return;
     }
@@ -903,6 +956,11 @@ function runGame(appEl: HTMLElement): void {
       state.victorPlayerId !== null ||
       st.hp <= 0 ||
       st.buildRemainingSec > 0;
+    if (canTrain && st.buildRemainingSec <= 0) {
+      hudBuildingMobileActions?.removeAttribute("hidden");
+    } else {
+      hudBuildingMobileActions?.setAttribute("hidden", "");
+    }
   }
 
   function updateInspectPanel(state: GameState): void {

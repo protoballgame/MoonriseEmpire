@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createEmptyGameState, makeSimUnit, type GameState } from "../state/GameState";
+import { createEmptyGameState, makeSimUnit, makeStructure, structureCenter, type GameState } from "../state/GameState";
+import { closestXZPointOnFootprintEdgesWrapped } from "../world/worldGrid";
 import { sphereGeodesicDistanceWorldXZ } from "../world/worldSurface";
 import { topologyDistanceXZ } from "../world/worldTopology";
 import { SimulationEngine } from "./SimulationEngine";
@@ -103,5 +104,39 @@ describe("SimulationEngine unit attack range", () => {
 
     expect(result.events.some((ev) => ev.type === "damage_dealt")).toBe(false);
     expect(result.state.units.find((u) => u.id === target.id)?.hp).toBe(targetHp);
+  });
+
+  it("lets ranged units attack structures from footprint edge range instead of crowding the center", () => {
+    const state = combatState();
+    const attacker = makeSimUnit("p1", "blue", "P", { x: 0, y: 0.55, z: 0 });
+    const target = makeStructure("p2", "red", "home", 10, 10, 4, 4, 500);
+    const center = structureCenter(target);
+    let attackerPos: { x: number; z: number } | null = null;
+
+    for (let x = -58; x <= 58 && !attackerPos; x += 0.25) {
+      for (let z = -58; z <= 58; z += 0.25) {
+        const edge = closestXZPointOnFootprintEdgesWrapped(x, z, target.gx, target.gz, target.footW, target.footD);
+        const edgeDistance = sphereGeodesicDistanceWorldXZ(x, z, edge.x, edge.z);
+        const centerDistance = sphereGeodesicDistanceWorldXZ(x, z, center.x, center.z);
+        if (edgeDistance < attacker.attackRange - 0.1 && centerDistance > attacker.attackRange + 1) {
+          attackerPos = { x, z };
+          break;
+        }
+      }
+    }
+
+    expect(attackerPos).not.toBeNull();
+    attacker.position.x = attackerPos!.x;
+    attacker.position.z = attackerPos!.z;
+    const beforePos = { ...attacker.position };
+    attacker.attackStructureTargetId = target.id;
+    state.units = [attacker];
+    state.structures = [target];
+
+    const result = new SimulationEngine().step(state, 0);
+
+    expect(result.events.some((ev) => ev.type === "damage_dealt")).toBe(true);
+    expect(result.state.structures.find((s) => s.id === target.id)?.hp).toBeLessThan(target.hp);
+    expect(result.state.units.find((u) => u.id === attacker.id)?.position).toEqual(beforePos);
   });
 });

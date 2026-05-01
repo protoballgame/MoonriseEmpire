@@ -461,6 +461,40 @@ body {
   cursor: not-allowed;
 }
 
+.hud-mobile-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.hud-mobile-actions:not([hidden]) {
+  display: none;
+}
+
+.hud-mobile-actions[hidden] {
+  display: none !important;
+}
+
+.hud-mobile-action {
+  flex: 1 1 0;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid rgba(74, 240, 255, 0.5);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(18, 44, 62, 0.94), rgba(6, 18, 30, 0.98));
+  color: #dffbff;
+  font-family: "Share Tech Mono", Consolas, "Courier New", monospace;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hud-mobile-action--armed {
+  color: #081018;
+  border-color: rgba(255, 224, 112, 0.86);
+  background: linear-gradient(180deg, #ffe978, #ffb020);
+}
+
 .hud-metrics {
   display: flex;
   flex-wrap: wrap;
@@ -2861,11 +2895,11 @@ body {
     z-index: 34;
   }
 
-  .hud-cluster.hud-cluster--selection-panel-visible .hud-build-menu--detached,
-  .hud-cluster.hud-cluster--selection-panel-visible .hud-unit-panel {
+  .hud-cluster.hud-cluster--selection-panel-visible .hud-build-menu--detached {
     display: none !important;
   }
 
+  .hud-cluster.hud-cluster--selection-panel-visible .hud-unit-panel:not([hidden]),
   .hud-cluster.hud-cluster--selection-panel-visible .hud-building-panel:not([hidden]) {
     display: flex !important;
     width: 100%;
@@ -2877,6 +2911,7 @@ body {
     overflow: auto;
   }
 
+  .hud-cluster.hud-cluster--selection-panel-visible .hud-unit-body,
   .hud-cluster.hud-cluster--selection-panel-visible .hud-building-tip,
   .hud-cluster.hud-cluster--selection-panel-visible .hud-building-status,
   .hud-cluster.hud-cluster--selection-panel-visible .hud-building-meta,
@@ -2885,8 +2920,17 @@ body {
     line-height: 1.22;
   }
 
+  .hud-cluster.hud-cluster--selection-panel-visible .hud-building-kicker {
+    font-size: 9px;
+  }
+
   .hud-cluster.hud-cluster--selection-panel-visible .hud-building-title {
     font-size: 14px;
+  }
+
+  .hud-cluster.hud-cluster--selection-panel-visible .hud-unit-body {
+    max-height: 42px;
+    overflow: auto;
   }
 
   .hud-cluster.hud-cluster--selection-panel-visible .hud-building-tip {
@@ -2898,6 +2942,18 @@ body {
     margin-top: 4px;
     padding: 7px 9px;
     font-size: 12px;
+  }
+
+  .hud-cluster.hud-cluster--selection-panel-visible .hud-mobile-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 5px;
+  }
+
+  .hud-cluster.hud-cluster--selection-panel-visible .hud-mobile-action {
+    min-height: 34px;
+    padding: 6px 5px;
+    font-size: 10px;
   }
 }
 

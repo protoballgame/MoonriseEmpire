@@ -18,6 +18,7 @@ import {
   type TerrainId
 } from "../core/state/GameState";
 import {
+  closestXZPointOnFootprintEdgesWrapped,
   footprintCenterWorld,
   GRID_CELL_SIZE,
   worldToCell
@@ -110,6 +111,8 @@ export type WorldInspectHit =
   | { kind: "structure"; id: string }
   | { kind: "unit"; id: string };
 
+export type MobileTargetAction = "move" | "attack_move" | "command" | "rally";
+
 export interface PrototypeViewOptions {
   localPlayerId: string;
   /** `sphere`: low-poly globe + crater impass; sim stays planar XZ. */
@@ -127,8 +130,8 @@ export interface PrototypeViewOptions {
   onInspect?: (hit: WorldInspectHit | null) => void;
   /** Optional callback when one-shot mobile command mode is consumed. */
   onMobileCommandConsumed?: () => void;
-  /** Touch/mobile helper: when true, the next plain left tap on terrain behaves like RMB. */
-  consumeMobileCommandMode?: () => boolean;
+  /** Touch/mobile helper: when set, the next plain left tap on terrain issues the selected action. */
+  consumeMobileCommandMode?: () => MobileTargetAction | null;
   /** When true (e.g. admin panel open), fog is disabled so tuning ranges stay readable. */
   getFogOfWarSuspended?: () => boolean;
   /** Double-tap Home (`H`): snap camera to local Command Core. */
@@ -2062,11 +2065,11 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
       return;
     }
 
-    const mobileCommand = !track.marquee && (this.options.consumeMobileCommandMode?.() ?? false);
+    const mobileCommand = !track.marquee ? (this.options.consumeMobileCommandMode?.() ?? null) : null;
     if (mobileCommand) {
       const point = this.pointerEventToGroundAt(ev.clientX, ev.clientY);
       if (point) {
-        this.issueRmbAtWorld(point.x, point.z, false, false);
+        this.issueMobileTargetActionAtWorld(mobileCommand, point.x, point.z);
       }
       this.options.onMobileCommandConsumed?.();
       this.options.onInspect?.(null);
@@ -2293,16 +2296,15 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
     let best: { kind: "unit" | "structure"; id: string; d: number } | null = null;
     for (const s of state.structures) {
       if (s.hp <= 0) continue;
-      const c = structureCenter(s);
-      const halfDiag = Math.hypot(s.footW * GRID_CELL_SIZE, s.footD * GRID_CELL_SIZE) * 0.5 + 1.2;
-      const d = topologyDistanceXZ(state, wx, wz, c.x, c.z);
-      if (d <= halfDiag && (best === null || d < best.d)) {
+      const edge = closestXZPointOnFootprintEdgesWrapped(wx, wz, s.gx, s.gz, s.footW, s.footD);
+      const d = sphereGeodesicDistanceWorldXZ(wx, wz, edge.x, edge.z);
+      if (d <= 1.2 && (best === null || d < best.d)) {
         best = { kind: "structure", id: s.id, d };
       }
     }
     for (const u of state.units) {
       if (u.hp <= 0) continue;
-      const d = topologyDistanceXZ(state, wx, wz, u.position.x, u.position.z);
+      const d = sphereGeodesicDistanceWorldXZ(wx, wz, u.position.x, u.position.z);
       if (d <= WORLD_UNIT_ATTACK_PICK && (best === null || d < best.d)) {
         best = { kind: "unit", id: u.id, d };
       }
@@ -2321,16 +2323,15 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
     let best: { kind: "unit" | "structure"; id: string; d: number } | null = null;
     for (const s of state.structures) {
       if (s.hp <= 0 || s.playerId === pid) continue;
-      const c = structureCenter(s);
-      const halfDiag = Math.hypot(s.footW * GRID_CELL_SIZE, s.footD * GRID_CELL_SIZE) * 0.5 + 1.2;
-      const d = topologyDistanceXZ(state, wx, wz, c.x, c.z);
-      if (d <= halfDiag && (best === null || d < best.d)) {
+      const edge = closestXZPointOnFootprintEdgesWrapped(wx, wz, s.gx, s.gz, s.footW, s.footD);
+      const d = sphereGeodesicDistanceWorldXZ(wx, wz, edge.x, edge.z);
+      if (d <= 1.2 && (best === null || d < best.d)) {
         best = { kind: "structure", id: s.id, d };
       }
     }
     for (const u of state.units) {
       if (u.hp <= 0 || u.playerId === pid) continue;
-      const d = topologyDistanceXZ(state, wx, wz, u.position.x, u.position.z);
+      const d = sphereGeodesicDistanceWorldXZ(wx, wz, u.position.x, u.position.z);
       if (d <= WORLD_UNIT_ATTACK_PICK && (best === null || d < best.d)) {
         best = { kind: "unit", id: u.id, d };
       }
@@ -2481,9 +2482,8 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
   applyMoonSpinFromScreenDelta(dx: number, dy: number): void {
     const sens = THREE.MathUtils.clamp(tuning.camera.sphereOrbitRadiansPerPixel, 0.0008, 0.008);
     const maxStep = tuning.camera.moonSpinMaxRadiansPerPointerStep * 3.5;
-    const seatDragSign = this.options.localPlayerId === "p2" ? -1 : 1;
-    const yaw = THREE.MathUtils.clamp(dx * sens * seatDragSign, -maxStep, maxStep);
-    const pitch = THREE.MathUtils.clamp(dy * sens * seatDragSign, -maxStep, maxStep);
+    const yaw = THREE.MathUtils.clamp(dx * sens, -maxStep, maxStep);
+    const pitch = THREE.MathUtils.clamp(dy * sens, -maxStep, maxStep);
     this.applyMoonSpinYawPitchDelta(yaw, pitch);
   }
 
@@ -2972,6 +2972,29 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
         submitCommand(createGameCommand(localPlayerId, "move_units", { target, formation }));
       }
     }
+  }
+
+  private issueMobileTargetActionAtWorld(action: MobileTargetAction, worldX: number, worldZ: number): void {
+    if (action === "command" || action === "rally") {
+      this.issueRmbAtWorld(worldX, worldZ, false, false);
+      return;
+    }
+    if (action === "attack_move") {
+      this.issueRmbAtWorld(worldX, worldZ, false, true);
+      return;
+    }
+
+    const canonical = canonicalizeWorldPoint("sphere", worldX, worldZ);
+    const st = this.lastSyncedState;
+    if (!st) return;
+    const selection = st.selections[this.options.localPlayerId] ?? [];
+    if (selection.length === 0) return;
+    this.options.submitCommand(
+      createGameCommand(this.options.localPlayerId, "move_units", {
+        target: { x: canonical.x, y: 0.55, z: canonical.z },
+        formation: tuning.formation.active
+      })
+    );
   }
 
   private isEnemyUnit(unitId: string): boolean {

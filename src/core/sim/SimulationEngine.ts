@@ -1299,7 +1299,15 @@ export class SimulationEngine {
     const s = focus.s;
     const c = structureCenter(s);
     if (unit.attackClass === "ranged") {
-      return sphericalDistance3(unit.position, c);
+      const edge = closestXZPointOnFootprintEdgesWrapped(
+        unit.position.x,
+        unit.position.z,
+        s.gx,
+        s.gz,
+        s.footW,
+        s.footD
+      );
+      return sphericalDistance3(unit.position, { x: edge.x, y: c.y, z: edge.z });
     }
     const xz = distancePointXZToFootprintEdgesWithMarginWrapped(
       unit.position.x,
