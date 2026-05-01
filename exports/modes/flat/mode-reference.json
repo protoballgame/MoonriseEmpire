@@ -1,0 +1,11 @@
+{
+  "mode": "flat",
+  "units": "meters",
+  "gridCellSize": 2.5,
+  "gridOrigin": {
+    "x": -30,
+    "z": -30
+  },
+  "groundHalfExtent": 68,
+  "worldSpanMeters": 136
+}

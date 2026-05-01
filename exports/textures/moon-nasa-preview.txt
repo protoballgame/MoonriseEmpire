@@ -1,0 +1,2 @@
+Texture download failed from: https://svs.gsfc.nasa.gov/vis/a000000/a014900/a014959/Moon-Model-Preview-Flat.jpg
+Reason: Error: HTTP 404

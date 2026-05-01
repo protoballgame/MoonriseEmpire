@@ -13,3 +13,9 @@ pnpm-debug.log*
 !.env.example
 .DS_Store
 Thumbs.db
+
+godaddy-upload-mrts/
+godaddy-upload-mrts*.zip
+match-exports/*.html
+match-exports/*.json
+
