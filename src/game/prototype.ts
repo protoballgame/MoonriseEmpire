@@ -2447,8 +2447,9 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
   applyMoonSpinFromScreenDelta(dx: number, dy: number): void {
     const sens = THREE.MathUtils.clamp(tuning.camera.sphereOrbitRadiansPerPixel, 0.0008, 0.008);
     const maxStep = tuning.camera.moonSpinMaxRadiansPerPointerStep * 3.5;
-    const yaw = THREE.MathUtils.clamp(dx * sens, -maxStep, maxStep);
-    const pitch = THREE.MathUtils.clamp(dy * sens, -maxStep, maxStep);
+    const seatDragSign = this.options.localPlayerId === "p2" ? -1 : 1;
+    const yaw = THREE.MathUtils.clamp(dx * sens * seatDragSign, -maxStep, maxStep);
+    const pitch = THREE.MathUtils.clamp(dy * sens * seatDragSign, -maxStep, maxStep);
     this.applyMoonSpinYawPitchDelta(yaw, pitch);
   }
 
