@@ -7,6 +7,8 @@ import {
   structureCenter,
   type GameState
 } from "../state/GameState";
+import { sphereGeodesicDistanceWorldXZ } from "../world/worldSurface";
+import { topologyDistanceXZ } from "../world/worldTopology";
 import { SimulationEngine } from "./SimulationEngine";
 
 function structureDefenseState(): GameState {
@@ -27,15 +29,29 @@ function structureDefenseState(): GameState {
 }
 
 describe("SimulationEngine structure defense", () => {
-  it("limits Defense Turret firing to 90% of center-based line of sight", () => {
+  it("limits Defense Turret firing to visible spherical line of sight", () => {
     const state = structureDefenseState();
     const turret = makeStructure("p1", "blue", "defense_obelisk", 12, 12, 1, 1, 100);
     const c = structureCenter(turret);
     const stats = defensiveStructureStats("defense_obelisk")!;
+    let targetPos: { x: number; z: number } | null = null;
+    for (let dx = -stats.fireRange; dx <= stats.fireRange && !targetPos; dx += 0.25) {
+      for (let dz = -stats.fireRange; dz <= stats.fireRange; dz += 0.25) {
+        const x = c.x + dx;
+        const z = c.z + dz;
+        const chartDistance = topologyDistanceXZ(state, c.x, c.z, x, z);
+        const visibleDistance = sphereGeodesicDistanceWorldXZ(c.x, c.z, x, z);
+        if (chartDistance <= stats.fireRange - 0.1 && visibleDistance > stats.fireRange + 0.1) {
+          targetPos = { x, z };
+          break;
+        }
+      }
+    }
+    expect(targetPos).not.toBeNull();
     const target = makeSimUnit("p2", "red", "N", {
-      x: c.x + stats.fireRange + 0.05,
+      x: targetPos!.x,
       y: c.y,
-      z: c.z
+      z: targetPos!.z
     });
     const targetHp = target.hp;
     state.structures = [turret];

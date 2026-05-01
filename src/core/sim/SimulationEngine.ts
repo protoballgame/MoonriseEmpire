@@ -76,11 +76,17 @@ import {
   GRID_ORIGIN_Z
 } from "../world/worldGrid";
 import { sphereGeodesicDistanceWorldXZ } from "../world/worldSurface";
-import { topologyDistance3, topologyDistanceXZ } from "../world/worldTopology";
+import { topologyDistanceXZ } from "../world/worldTopology";
 
 type HostileTarget =
   | { kind: "unit"; u: SimUnit }
   | { kind: "structure"; s: SimStructure };
+
+function sphericalDistance3(a: Vec3, b: Vec3): number {
+  const surfaceDistance = sphereGeodesicDistanceWorldXZ(a.x, a.z, b.x, b.z);
+  const dy = a.y - b.y;
+  return Math.hypot(surfaceDistance, dy);
+}
 
 function asVec3(v: unknown): Vec3 | null {
   if (!v || typeof v !== "object") return null;
@@ -898,7 +904,7 @@ export class SimulationEngine {
         if (u.team === defensive.team) continue;
         const d =
           defensive.kind === "defense_obelisk"
-            ? topologyDistance3(state, hc, u.position)
+            ? sphereGeodesicDistanceWorldXZ(hc.x, hc.z, u.position.x, u.position.z)
             : Math.sqrt(
                 distancePointXZToFootprintEdgesWithMarginWrapped(
                   u.position.x,
@@ -1288,10 +1294,13 @@ export class SimulationEngine {
    */
   private attackDistanceUnitToFocus(unit: SimUnit, focus: HostileTarget, state: GameState): number {
     if (focus.kind === "unit") {
-      return topologyDistance3(state, unit.position, focus.u.position);
+      return sphericalDistance3(unit.position, focus.u.position);
     }
     const s = focus.s;
     const c = structureCenter(s);
+    if (unit.attackClass === "ranged") {
+      return sphericalDistance3(unit.position, c);
+    }
     const xz = distancePointXZToFootprintEdgesWithMarginWrapped(
       unit.position.x,
       unit.position.z,
@@ -1341,7 +1350,7 @@ export class SimulationEngine {
         (u) => u.id === aid && !deadIds.has(u.id) && u.hp > 0 && u.team !== unit.team
       );
       if (!other) continue;
-      const d = topologyDistance3(state, unit.position, other.position);
+      const d = sphericalDistance3(unit.position, other.position);
       if (d < bestD) {
         bestD = d;
         best = other;
@@ -1362,7 +1371,7 @@ export class SimulationEngine {
     for (const o of state.units) {
       if (o.id === unit.id || deadIds.has(o.id) || o.hp <= 0 || o.team === unit.team) continue;
       if (excludeId !== null && o.id === excludeId) continue;
-      const d = topologyDistance3(state, unit.position, o.position);
+      const d = sphericalDistance3(unit.position, o.position);
       if (d <= unit.visionRange && d < bestD) {
         bestD = d;
         best = o;
@@ -1384,7 +1393,7 @@ export class SimulationEngine {
     for (const other of state.units) {
       if (other.id === unit.id || deadIds.has(other.id) || other.hp <= 0) continue;
       if (other.team === unit.team) continue;
-      const d = topologyDistance3(state, unit.position, other.position);
+      const d = sphericalDistance3(unit.position, other.position);
       if (d > maxDistance) continue;
       if (d < bestDist) {
         bestDist = d;
@@ -1394,7 +1403,7 @@ export class SimulationEngine {
 
     for (const s of state.structures) {
       if (s.hp <= 0 || s.team === unit.team) continue;
-      const d = topologyDistance3(state, unit.position, structureCenter(s));
+      const d = sphericalDistance3(unit.position, structureCenter(s));
       if (d > maxDistance) continue;
       if (d < bestDist) {
         bestDist = d;
@@ -1502,7 +1511,7 @@ export class SimulationEngine {
         continue;
       }
       const isVictim = ally.id === victim.id;
-      if (!isVictim && topologyDistance3(state, ally.position, attacker.position) > ally.visionRange) continue;
+      if (!isVictim && sphericalDistance3(ally.position, attacker.position) > ally.visionRange) continue;
 
       ally.attackTargetId = attacker.id;
       ally.attackStructureTargetId = null;

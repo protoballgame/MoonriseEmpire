@@ -105,9 +105,21 @@ describe("CPU economy / build rush", () => {
     addOpponentMilitary(s, ["R", "S"]);
     const commands: { type: string; payload?: Record<string, unknown> }[] = [];
 
-    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 13);
 
     expect(commands.some((cmd) => cmd.type === "attack_move_units")).toBe(false);
+  });
+
+  it("sends the first CPU attack as a three-soldier wave", () => {
+    const s = pvcState();
+    addOpponentMilitary(s, ["R", "S", "P"]);
+    const commands: { type: string; payload?: Record<string, unknown> }[] = [];
+
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+
+    const attackMove = commands.find((cmd) => cmd.type === "attack_move_units");
+    expect(attackMove).toBeDefined();
+    expect(attackMove?.payload?.["unitIds"]).toHaveLength(3);
   });
 
   it("queues multiple soldier types when extra resources and barracks are available", () => {

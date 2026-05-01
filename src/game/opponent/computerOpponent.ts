@@ -28,7 +28,7 @@ let cpuImmediateIdleGatherPending = true;
 let constructionAssistAccumSec = 0;
 /** Seconds between CPU attack-move raids with idle military. */
 let raidMoveAccumSec = 0;
-/** Send one idle fighter toward map center to open fog / contest mid. */
+/** Send an idle fighter wave toward map center to open fog / contest mid. */
 let scoutMilitaryAccumSec = 0;
 
 const CONSTRUCTION_ASSIST_ASSIGN_INTERVAL_SEC = 0.22;
@@ -1022,7 +1022,7 @@ function pickCpuIdleMilitary(state: GameState, computerPlayerId: string): SimUni
 }
 
 /**
- * Push vision toward world center: pick the idle fighter farthest from (0,0) and march it inward.
+ * Push vision toward world center only with a real wave; do not peel off one soldier at a time.
  */
 function tryComputerScoutMilitaryTowardMid(
   state: GameState,
@@ -1033,7 +1033,7 @@ function tryComputerScoutMilitaryTowardMid(
   scoutMilitaryAccumSec += deltaSeconds;
   if (scoutMilitaryAccumSec < SCOUT_MILITARY_INTERVAL_SEC) return;
   const idle = pickCpuIdleMilitary(state, computerPlayerId);
-  if (idle.length === 0) return;
+  if (idle.length < CPU_ATTACK_WAVE_MIN_IDLE_MILITARY) return;
   let best = idle[0]!;
   let bestD = Math.hypot(best.position.x - MAP_CONTEST_XZ.x, best.position.z - MAP_CONTEST_XZ.z);
   for (const u of idle) {
@@ -1047,13 +1047,11 @@ function tryComputerScoutMilitaryTowardMid(
     scoutMilitaryAccumSec = SCOUT_MILITARY_INTERVAL_SEC * 0.35;
     return;
   }
-  const scout =
-    idle.find((u) => u.kind === "P" && Math.hypot(u.position.x, u.position.z) > 8) ?? best;
   scoutMilitaryAccumSec = 0;
   submit(
     createGameCommand(computerPlayerId, "attack_move_units", {
       target: { x: MAP_CONTEST_XZ.x, y: 0.55, z: MAP_CONTEST_XZ.z },
-      unitIds: [scout.id],
+      unitIds: idle.map((u) => u.id),
       formation: tuning.formation.active
     })
   );

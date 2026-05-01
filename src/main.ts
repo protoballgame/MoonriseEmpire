@@ -66,7 +66,10 @@ import { reviveGameStateFromNetwork } from "./game/net/gameStateFromNetwork";
 import { resolveMatchWebSocketUrl } from "./game/net/resolveMatchWebSocketUrl";
 
 const POP_CAP_PLACEHOLDER = 200;
-const DEFAULT_MOON_TEXTURE_URL = "./moon/moontexture.jpg";
+
+function defaultMoonTextureUrl(): string {
+  return new URL("./moon/moontexture.jpg?v=4", window.location.href).toString();
+}
 
 /** Full seconds shown (5…1), then {@link MATCH_BEGIN_FLASH_SEC} of "BEGIN!". */
 const MATCH_COUNTDOWN_SECONDS = 5;
@@ -319,10 +322,19 @@ function runGame(appEl: HTMLElement): void {
   const skipCountdownForSession = skipMatchCountdown && !useAuthoritativeNet;
   matchStartOverlay.hidden = skipCountdownForSession;
   matchStartOverlay.innerHTML = `
-    <div class="match-start-count" id="matchStartCount" aria-live="assertive">5</div>
+    <div class="match-start-panel">
+      <div class="match-start-count" id="matchStartCount" aria-live="assertive">5</div>
+      <button type="button" class="match-start-menu" id="matchStartMenu" hidden>Back to Main Menu</button>
+    </div>
   `;
   appEl.appendChild(matchStartOverlay);
   const matchStartCountEl = matchStartOverlay.querySelector<HTMLElement>("#matchStartCount");
+  const matchStartMenuBtn = matchStartOverlay.querySelector<HTMLButtonElement>("#matchStartMenu");
+  matchStartMenuBtn?.addEventListener("click", () => {
+    const path = window.location.pathname || "/";
+    history.replaceState(null, "", path);
+    window.location.reload();
+  });
   if (useAuthoritativeNet) {
     if (matchStartCountEl) {
       matchStartCountEl.classList.add("match-start-count--net-message");
@@ -331,6 +343,18 @@ function runGame(appEl: HTMLElement): void {
   }
 
   let matchLive = skipCountdownForSession;
+  let mobileCommandMode = false;
+  const mobileCommandBtn = document.createElement("button");
+  mobileCommandBtn.type = "button";
+  mobileCommandBtn.className = "mobile-command-btn";
+  mobileCommandBtn.textContent = "Command";
+  mobileCommandBtn.title = "Mobile: tap Command, then tap the moon/minimap destination to move, gather, attack, or set rally.";
+  mobileCommandBtn.addEventListener("click", () => {
+    mobileCommandMode = !mobileCommandMode;
+    mobileCommandBtn.classList.toggle("mobile-command-btn--armed", mobileCommandMode);
+    mobileCommandBtn.textContent = mobileCommandMode ? "Tap Target" : "Command";
+  });
+  appEl.appendChild(mobileCommandBtn);
   /** Set when the render loop starts so load/setup time does not eat the countdown. */
   let matchStartAtMs = 0;
 
@@ -436,7 +460,7 @@ function runGame(appEl: HTMLElement): void {
     antialias: false,
     powerPreference: "high-performance"
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -559,12 +583,21 @@ function runGame(appEl: HTMLElement): void {
   view = new PrototypeView(scene, camera, renderer, {
     localPlayerId,
     terrain: clientSetup.terrain ?? "sphere",
-    moonTextureUrl: DEFAULT_MOON_TEXTURE_URL,
+    moonTextureUrl: defaultMoonTextureUrl(),
     submitCommand: submitCommandWithLog,
     getPendingPlaceStructureKind: () => pendingPlaceKind,
     getFogOfWarSuspended: () => adminPanelOpen,
     onInspect: (h) => {
       inspectHit = h;
+    },
+    consumeMobileCommandMode: () => {
+      if (!mobileCommandMode) return false;
+      mobileCommandMode = false;
+      return true;
+    },
+    onMobileCommandConsumed: () => {
+      mobileCommandBtn.classList.remove("mobile-command-btn--armed");
+      mobileCommandBtn.textContent = "Command";
     },
     focusOnLocalHome: () => focusCameraOnLocalHome(gameState)
   });
@@ -986,7 +1019,11 @@ function runGame(appEl: HTMLElement): void {
   }
 
   function tick(): void {
-    const deltaSeconds = Math.min(clock.getDelta(), 0.05);
+    const rawDeltaSeconds = clock.getDelta();
+    const deltaSeconds =
+      matchLive && !useAuthoritativeNet
+        ? Math.min(rawDeltaSeconds, 2)
+        : Math.min(rawDeltaSeconds, 0.08);
     try {
       const setup = boot.session.clientSetup;
 
@@ -999,6 +1036,7 @@ function runGame(appEl: HTMLElement): void {
             matchStartCountEl.classList.add("match-start-count--net-message");
             matchStartCountEl.textContent = netRoomReady ? "Starting match…" : formatRoomWaitMessage();
           }
+          if (matchStartMenuBtn) matchStartMenuBtn.hidden = netRoomReady;
         } else {
           const elapsedSec = (performance.now() - matchStartAtMs) / 1000;
           if (elapsedSec < MATCH_COUNTDOWN_SECONDS) {
@@ -1009,6 +1047,7 @@ function runGame(appEl: HTMLElement): void {
           } else {
             matchLive = true;
             matchStartOverlay.hidden = true;
+            if (matchStartMenuBtn) matchStartMenuBtn.hidden = true;
           }
         }
       }
@@ -1044,6 +1083,7 @@ function runGame(appEl: HTMLElement): void {
         if (!netRoomReady) {
           matchLive = false;
           matchStartOverlay.hidden = false;
+          if (matchStartMenuBtn) matchStartMenuBtn.hidden = false;
           if (matchStartCountEl) {
             matchStartCountEl.classList.add("match-start-count--net-message");
             matchStartCountEl.textContent = formatRoomWaitMessage();
@@ -1057,10 +1097,12 @@ function runGame(appEl: HTMLElement): void {
           if (!matchLive) {
             matchLive = true;
             matchStartOverlay.hidden = true;
+            if (matchStartMenuBtn) matchStartMenuBtn.hidden = true;
           }
         } else if (!matchLive) {
           matchLive = true;
           matchStartOverlay.hidden = true;
+          if (matchStartMenuBtn) matchStartMenuBtn.hidden = true;
         }
         for (const p of batch) {
           if (p.roomReady) matchAnalytics.recordTick(p.state.tick, deltaSeconds, p.events, p.feedback);
@@ -1234,7 +1276,7 @@ function runGame(appEl: HTMLElement): void {
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(window.innerWidth, window.innerHeight);
     moonPresentation.setSize(window.innerWidth, window.innerHeight, renderer.getPixelRatio());
   });

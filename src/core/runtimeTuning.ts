@@ -18,6 +18,7 @@ const PAPER_ATTACK_RANGE = 4.0;
  */
 const ROCK_MELEE_RANGE = 1.48;
 const UNIT_SPEED_STEP = fibonacci(1);
+const UNIT_MOVEMENT_SPEED_MULTIPLIER = 1.62;
 
 export type FormationId = "none" | "square" | "circle" | "triangle";
 
@@ -74,7 +75,7 @@ const DEFAULT_TUNING: RuntimeTuning = {
   units: {
     R: {
       hp: unitMaxHpForKind("R"),
-      speed: 2.8 + UNIT_SPEED_STEP,
+      speed: (2.8 + UNIT_SPEED_STEP) * UNIT_MOVEMENT_SPEED_MULTIPLIER,
       range: ROCK_MELEE_RANGE,
       visionRange: 11.25,
       damage: unitDamageForKind("R"),
@@ -83,7 +84,7 @@ const DEFAULT_TUNING: RuntimeTuning = {
     },
     P: {
       hp: unitMaxHpForKind("P"),
-      speed: 2.2 + UNIT_SPEED_STEP,
+      speed: (2.2 + UNIT_SPEED_STEP) * UNIT_MOVEMENT_SPEED_MULTIPLIER,
       range: PAPER_ATTACK_RANGE,
       visionRange: 15,
       damage: unitDamageForKind("P"),
@@ -92,7 +93,7 @@ const DEFAULT_TUNING: RuntimeTuning = {
     },
     S: {
       hp: unitMaxHpForKind("S"),
-      speed: 3.6 + UNIT_SPEED_STEP,
+      speed: (3.6 + UNIT_SPEED_STEP) * UNIT_MOVEMENT_SPEED_MULTIPLIER,
       range: 1.5,
       visionRange: 11.25,
       damage: unitDamageForKind("S"),
@@ -101,7 +102,7 @@ const DEFAULT_TUNING: RuntimeTuning = {
     },
     N: {
       hp: unitMaxHpForKind("N"),
-      speed: 2.5 + UNIT_SPEED_STEP,
+      speed: (2.5 + UNIT_SPEED_STEP) * UNIT_MOVEMENT_SPEED_MULTIPLIER,
       range: PAPER_ATTACK_RANGE / PHI,
       visionRange: 10,
       damage: unitDamageForKind("N"),

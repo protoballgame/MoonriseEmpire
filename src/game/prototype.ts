@@ -122,6 +122,10 @@ export interface PrototypeViewOptions {
   getPendingPlaceStructureKind?: () => PlaceableStructureKind | null;
   /** Single LMB (non-marquee): world object under cursor for stats panel. */
   onInspect?: (hit: WorldInspectHit | null) => void;
+  /** Optional callback when one-shot mobile command mode is consumed. */
+  onMobileCommandConsumed?: () => void;
+  /** Touch/mobile helper: when true, the next plain left tap on terrain behaves like RMB. */
+  consumeMobileCommandMode?: () => boolean;
   /** When true (e.g. admin panel open), fog is disabled so tuning ranges stay readable. */
   getFogOfWarSuspended?: () => boolean;
   /** Double-tap Home (`H`): snap camera to local Command Core. */
@@ -138,7 +142,11 @@ type RmbTrack = {
 type LmbTrack = {
   startX: number;
   startY: number;
+  lastX: number;
+  lastY: number;
   marquee: boolean;
+  cameraDrag: boolean;
+  pointerType: string;
 };
 
 /** Cosmetic ranged shot; sim is still hitscan. */
@@ -270,6 +278,8 @@ export class PrototypeView {
   private rmbPointerLockMoveDistance = 0;
   private rmbPointerLockTimer: number | null = null;
   private lmbTrack: LmbTrack | null = null;
+  private readonly activeTouchPointers = new Map<number, { x: number; y: number }>();
+  private touchPinchPrevDistance: number | null = null;
   /** Same-screen double pick on one unit → select all owned units of that kind (RTS double-click). */
   private lastLmbUnitPickForDouble: {
     unitId: string;
@@ -1722,13 +1732,30 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
 
     canvas.addEventListener("pointerdown", (ev) => {
       if (ev.button === 0) {
+        if (ev.pointerType === "touch") {
+          ev.preventDefault();
+          this.activeTouchPointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+          if (this.activeTouchPointers.size >= 2) {
+            this.touchPinchPrevDistance = this.currentTouchPinchDistance();
+            this.lmbTrack = null;
+            window.removeEventListener("pointermove", this.onLmbWindowMove);
+            window.removeEventListener("pointerup", this.onLmbWindowUp);
+            window.removeEventListener("pointercancel", this.onLmbWindowUp);
+            return;
+          }
+        }
         this.lmbTrack = {
           startX: ev.clientX,
           startY: ev.clientY,
+          lastX: ev.clientX,
+          lastY: ev.clientY,
+          pointerType: ev.pointerType,
+          cameraDrag: false,
           marquee: false
         };
         window.addEventListener("pointermove", this.onLmbWindowMove);
         window.addEventListener("pointerup", this.onLmbWindowUp);
+        window.addEventListener("pointercancel", this.onLmbWindowUp);
         return;
       }
 
@@ -1939,9 +1966,42 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
   }
 
   private handleLmbWindowMove(ev: PointerEvent): void {
-    if (!this.lmbTrack || !(ev.buttons & 1)) return;
+    if (ev.pointerType === "touch") {
+      ev.preventDefault();
+      this.activeTouchPointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      if (this.activeTouchPointers.size >= 2) {
+        const pinch = this.currentTouchPinchDistance();
+        if (pinch !== null && this.touchPinchPrevDistance !== null && this.touchPinchPrevDistance > 1) {
+          const ratio = pinch / this.touchPinchPrevDistance;
+          this.cameraDistance = THREE.MathUtils.clamp(
+            this.cameraDistance / ratio,
+            tuning.camera.zoomMin,
+            tuning.camera.zoomMax
+          );
+          this.updateCameraTransform();
+        }
+        this.touchPinchPrevDistance = pinch;
+        if (this.lmbTrack) this.lmbTrack.cameraDrag = true;
+        return;
+      }
+    }
+    if (!this.lmbTrack || (ev.pointerType !== "touch" && !(ev.buttons & 1))) return;
 
     const dist = Math.hypot(ev.clientX - this.lmbTrack.startX, ev.clientY - this.lmbTrack.startY);
+    if (this.lmbTrack.pointerType === "touch") {
+      const dx = ev.clientX - this.lmbTrack.lastX;
+      const dy = ev.clientY - this.lmbTrack.lastY;
+      this.lmbTrack.lastX = ev.clientX;
+      this.lmbTrack.lastY = ev.clientY;
+      if (dist > RMB_DRAG_THRESHOLD_PX || this.lmbTrack.cameraDrag) {
+        this.lmbTrack.cameraDrag = true;
+        if (Math.hypot(dx, dy) > 0.25) {
+          this.applyMoonSpinFromScreenDelta(dx, dy);
+          this.updateCameraTransform();
+        }
+      }
+      return;
+    }
     if (dist > LMB_MARQUEE_THRESHOLD_PX || this.lmbTrack.marquee) {
       this.lmbTrack.marquee = true;
       this.updateMarqueeBox(this.lmbTrack.startX, this.lmbTrack.startY, ev.clientX, ev.clientY);
@@ -1949,17 +2009,47 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
   }
 
   private handleLmbWindowUp(ev: PointerEvent): void {
-    if (ev.button !== 0) return;
-    if (!this.lmbTrack) return;
+    if (ev.pointerType === "touch") {
+      ev.preventDefault();
+      this.activeTouchPointers.delete(ev.pointerId);
+      if (this.activeTouchPointers.size < 2) this.touchPinchPrevDistance = null;
+    }
+    if (ev.button !== 0 && ev.type !== "pointercancel") return;
+    if (!this.lmbTrack) {
+      if (this.activeTouchPointers.size === 0) {
+        window.removeEventListener("pointermove", this.onLmbWindowMove);
+        window.removeEventListener("pointerup", this.onLmbWindowUp);
+        window.removeEventListener("pointercancel", this.onLmbWindowUp);
+      }
+      return;
+    }
 
     window.removeEventListener("pointermove", this.onLmbWindowMove);
     window.removeEventListener("pointerup", this.onLmbWindowUp);
+    window.removeEventListener("pointercancel", this.onLmbWindowUp);
 
     const { localPlayerId, submitCommand } = this.options;
     const track = this.lmbTrack;
     this.lmbTrack = null;
 
     this.marqueeDiv.style.display = "none";
+
+    if (track.cameraDrag || ev.type === "pointercancel") {
+      this.lastLmbUnitPickForDouble = null;
+      this.options.onInspect?.(null);
+      return;
+    }
+
+    const mobileCommand = !track.marquee && (this.options.consumeMobileCommandMode?.() ?? false);
+    if (mobileCommand) {
+      const point = this.pointerEventToGroundAt(ev.clientX, ev.clientY);
+      if (point) {
+        this.issueRmbAtWorld(point.x, point.z, false, false);
+      }
+      this.options.onMobileCommandConsumed?.();
+      this.options.onInspect?.(null);
+      return;
+    }
 
     if (track.marquee) {
       this.lastLmbUnitPickForDouble = null;
@@ -2294,6 +2384,14 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
     const sx = (this.projVec.x * 0.5 + 0.5) * r.width + r.left;
     const sy = (-this.projVec.y * 0.5 + 0.5) * r.height + r.top;
     return { sx, sy, ok: true };
+  }
+
+  private currentTouchPinchDistance(): number | null {
+    const points = [...this.activeTouchPointers.values()];
+    if (points.length < 2) return null;
+    const a = points[0]!;
+    const b = points[1]!;
+    return Math.hypot(a.x - b.x, a.y - b.y);
   }
 
   private handleRmbCanvasMove(ev: PointerEvent): void {

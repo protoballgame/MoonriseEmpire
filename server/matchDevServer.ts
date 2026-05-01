@@ -100,6 +100,30 @@ function roomStatusPayload(room: MatchRoom): {
   };
 }
 
+function openRoomsPayload(): {
+  rooms: Array<{ room: string; seats: { p1: boolean; p2: boolean }; waitingFor: SeatId; ageSec: number }>;
+} {
+  const now = Date.now();
+  const waitingRooms: Array<{
+    room: string;
+    seats: { p1: boolean; p2: boolean };
+    waitingFor: SeatId;
+    ageSec: number;
+  }> = [];
+  for (const room of rooms.values()) {
+    const seats = roomSeatStatus(room);
+    if (seats.p1 === seats.p2) continue;
+    waitingRooms.push({
+      room: room.id,
+      seats,
+      waitingFor: seats.p1 ? PLAYER_OPPONENT : PLAYER_HUMAN,
+      ageSec: Math.max(0, Math.floor((now - room.lastActiveMs) / 1000))
+    });
+  }
+  waitingRooms.sort((a, b) => a.ageSec - b.ageSec || a.room.localeCompare(b.room));
+  return { rooms: waitingRooms.slice(0, 12) };
+}
+
 function seatIsOccupied(room: MatchRoom, seat: SeatId, requester: WebSocket): boolean {
   for (const [ws, meta] of room.sockets) {
     if (ws !== requester && meta.hello && meta.seat === seat && ws.readyState === ws.OPEN) {
@@ -143,6 +167,15 @@ const COMMAND_TYPES = new Set<string>([
 ]);
 
 const server = createServer((req, res) => {
+  if (req.url === "/rooms") {
+    res.writeHead(200, {
+      "access-control-allow-origin": "*",
+      "cache-control": "no-store",
+      "content-type": "application/json"
+    });
+    res.end(JSON.stringify(openRoomsPayload()));
+    return;
+  }
   if (req.url === "/health" || req.url === "/") {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true, rooms: rooms.size }));

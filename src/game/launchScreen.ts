@@ -68,6 +68,19 @@ function formatHostForHttpUrl(host: string): string {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 }
 
+function matchRoomsHttpUrl(wsUrl: string): string | null {
+  try {
+    const url = new URL(wsUrl);
+    url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+    url.pathname = "/rooms";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 function mountLaunchSkybox(launchRoot: HTMLElement): () => void {
   const canvasHost = document.createElement("div");
   canvasHost.className = "launch-screen__skybox";
@@ -175,7 +188,14 @@ export function mountLaunchScreen(launchRoot: HTMLElement, _appEl: HTMLElement, 
           Start a private 1v1 room, copy the invite link, and send it to your opponent. Host plays
           <strong>Player 1</strong> (blue); the invite joins as <strong>Player 2</strong> (red).
         </p>
-        <p class="launch-screen__note" id="launchNetNote">Run <code>npm run match:dev</code>, then host a room and copy the invite link.</p>
+        <p class="launch-screen__note" id="launchNetNote">Host a room, copy an invite, or join an open room below.</p>
+        <div class="launch-screen__rooms" aria-live="polite">
+          <div class="launch-screen__rooms-head">
+            <strong>Open Rooms</strong>
+            <button type="button" class="launch-screen__btn launch-screen__btn--mini" id="launchRefreshRooms">Refresh</button>
+          </div>
+          <div class="launch-screen__rooms-list" id="launchOpenRooms">Checking for rooms...</div>
+        </div>
         <label class="launch-screen__label" for="launchRoomField">Room code</label>
         <div class="launch-screen__row">
           <input
@@ -223,14 +243,9 @@ export function mountLaunchScreen(launchRoot: HTMLElement, _appEl: HTMLElement, 
             </button>
           </div>
           <p class="launch-screen__help" id="launchHostHelp">
-            If this page is <code>localhost</code>, guests cannot use that URL from another machine. Enter your PC’s LAN IP
-            and port (Vite default <code>5173</code>). Forward ports only if testing across the internet.
-          </p>
-          <p class="launch-screen__help">
-            Match server: <code id="launchWsHint">ws://…:8788</code>. This jam server now supports multiple private rooms, but it is not public matchmaking infrastructure.
+            Optional: override the address used when copying invite links for LAN testing.
           </p>
         </details>
-        <p class="launch-screen__help">Map: <strong>Moon sphere</strong> (charted sim XZ on a globe).</p>
       </div>
       <footer class="launch-screen__footer">
         <span>Moonrise Empire by Studio Z 3D / Real-time mode / jam build</span>
@@ -248,7 +263,7 @@ export function mountLaunchScreen(launchRoot: HTMLElement, _appEl: HTMLElement, 
   const roomField = launchRoot.querySelector<HTMLInputElement>("#launchRoomField")!;
   const joinUrlEl = launchRoot.querySelector<HTMLInputElement>("#launchJoinUrl")!;
   const joinPasteEl = launchRoot.querySelector<HTMLInputElement>("#launchJoinPaste")!;
-  const wsHint = launchRoot.querySelector<HTMLElement>("#launchWsHint")!;
+  const openRoomsEl = launchRoot.querySelector<HTMLElement>("#launchOpenRooms")!;
   const pvpSection = launchRoot.querySelector<HTMLElement>("#launchPvpSection")!;
   const pvpTerrain = "sphere" as const;
   let roomId = normalizeRoomCode(new URLSearchParams(window.location.search).get("room") ?? "") || randomRoomCode();
@@ -291,7 +306,56 @@ export function mountLaunchScreen(launchRoot: HTMLElement, _appEl: HTMLElement, 
     q.set("terrain", "sphere");
     const guestUrl = buildGuestJoinUrl(hostField.value, q, wsUrl, roomId);
     joinUrlEl.value = guestUrl;
-    wsHint.textContent = wsUrl;
+  }
+
+  type OpenRoom = {
+    room?: unknown;
+    seats?: { p1?: unknown; p2?: unknown };
+    waitingFor?: unknown;
+  };
+
+  async function refreshOpenRooms(): Promise<void> {
+    const roomsUrl = matchRoomsHttpUrl(matchServerWsUrl());
+    if (!roomsUrl) {
+      openRoomsEl.textContent = "Room list unavailable.";
+      return;
+    }
+    openRoomsEl.textContent = "Checking for rooms...";
+    try {
+      const res = await fetch(roomsUrl, { cache: "no-store" });
+      if (!res.ok) throw new Error(`rooms_${res.status}`);
+      const data = (await res.json()) as { rooms?: OpenRoom[] };
+      const rooms = Array.isArray(data.rooms) ? data.rooms : [];
+      if (rooms.length === 0) {
+        openRoomsEl.innerHTML = `<p class="launch-screen__rooms-empty">No rooms waiting right now. Host one and others will see it here.</p>`;
+        return;
+      }
+      openRoomsEl.replaceChildren(
+        ...rooms.map((entry) => {
+          const code = normalizeRoomCode(String(entry.room ?? ""));
+          const waitingFor = entry.waitingFor === "p1" ? "p1" : "p2";
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "launch-screen__room-row";
+          btn.innerHTML = `<span class="launch-screen__room-code">${code}</span><span class="launch-screen__room-status">Join as ${waitingFor.toUpperCase()}</span>`;
+          btn.addEventListener("click", () => {
+            roomField.value = code;
+            roomId = code;
+            refreshJoinUrl();
+            const q = preservedParamsMinusMatchSeat();
+            q.set("match", "pvp");
+            q.set("seat", waitingFor);
+            q.set("room", roomId);
+            q.set("matchWs", matchServerWsUrl());
+            q.set("terrain", pvpTerrain);
+            writeSearchAndStart(q);
+          });
+          return btn;
+        })
+      );
+    } catch {
+      openRoomsEl.innerHTML = `<p class="launch-screen__rooms-empty">Could not reach the room list. You can still host or join by room code.</p>`;
+    }
   }
 
   refreshJoinUrl();
@@ -338,8 +402,13 @@ export function mountLaunchScreen(launchRoot: HTMLElement, _appEl: HTMLElement, 
   launchRoot.querySelector("#launchVsPvpExpand")!.addEventListener("click", () => {
     pvpSection.hidden = false;
     refreshJoinUrl();
+    void refreshOpenRooms();
     void autofillPublicIp();
     joinUrlEl.focus();
+  });
+
+  launchRoot.querySelector("#launchRefreshRooms")!.addEventListener("click", () => {
+    void refreshOpenRooms();
   });
 
   launchRoot.querySelector("#launchCopyJoin")!.addEventListener("click", async () => {
