@@ -167,7 +167,17 @@ const COMMAND_TYPES = new Set<string>([
 ]);
 
 const server = createServer((req, res) => {
-  if (req.url === "/rooms") {
+  const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "access-control-allow-headers": "content-type",
+      "access-control-allow-methods": "GET, OPTIONS",
+      "access-control-allow-origin": "*"
+    });
+    res.end();
+    return;
+  }
+  if (url.pathname === "/rooms") {
     res.writeHead(200, {
       "access-control-allow-origin": "*",
       "cache-control": "no-store",
@@ -176,7 +186,7 @@ const server = createServer((req, res) => {
     res.end(JSON.stringify(openRoomsPayload()));
     return;
   }
-  if (req.url === "/health" || req.url === "/") {
+  if (url.pathname === "/health" || url.pathname === "/") {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true, rooms: rooms.size }));
     return;

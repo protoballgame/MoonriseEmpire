@@ -73,7 +73,7 @@ function matchRoomsHttpUrl(wsUrl: string): string | null {
     const url = new URL(wsUrl);
     url.protocol = url.protocol === "wss:" ? "https:" : "http:";
     url.pathname = "/rooms";
-    url.search = "";
+    url.search = `?t=${Date.now()}`;
     url.hash = "";
     return url.toString();
   } catch {
@@ -322,7 +322,7 @@ export function mountLaunchScreen(launchRoot: HTMLElement, _appEl: HTMLElement, 
     }
     openRoomsEl.textContent = "Checking for rooms...";
     try {
-      const res = await fetch(roomsUrl, { cache: "no-store" });
+      const res = await fetch(roomsUrl);
       if (!res.ok) throw new Error(`rooms_${res.status}`);
       const data = (await res.json()) as { rooms?: OpenRoom[] };
       const rooms = Array.isArray(data.rooms) ? data.rooms : [];
