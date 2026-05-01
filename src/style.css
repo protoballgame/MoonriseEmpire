@@ -2156,10 +2156,14 @@ body {
 }
 
 .hud-top-stats .hud {
+  display: grid;
+  grid-template-columns: minmax(156px, 1fr) auto auto minmax(190px, 1fr);
+  align-items: center;
+  gap: 8px;
   width: 100%;
   min-width: 0;
   max-width: none;
-  padding: 8px 18px;
+  padding: 5px 10px;
   border-radius: 12px;
   clip-path: none;
 }
@@ -2170,45 +2174,48 @@ body {
 
 .hud-top-stats .hud-metrics {
   margin: 0;
-  padding: 7px 10px;
+  padding: 3px 8px;
+  min-width: 0;
 }
 
 .hud-top-stats .hud-pertinent {
-  margin: 6px 0 0;
-  padding: 5px 8px;
+  margin: 0;
+  padding: 3px 7px;
   justify-content: center;
+  white-space: nowrap;
 }
 
 .hud-top-stats .hud-command-action {
   display: flex;
   justify-content: center;
-  margin: 5px 0 0;
+  margin: 0;
   pointer-events: auto;
 }
 
 .hud-top-stats .mobile-command-btn {
   align-self: center;
   width: auto;
-  min-width: 112px;
-  min-height: 30px;
-  padding: 6px 14px;
-  font-size: 11px;
+  min-width: 84px;
+  min-height: 24px;
+  padding: 4px 11px;
+  font-size: 9px;
   line-height: 1;
 }
 
 .hud-top-stats .hud-idle-cycle {
   display: flex !important;
   justify-content: center;
-  gap: 8px;
-  margin: 6px 0 0;
+  flex-wrap: nowrap;
+  gap: 6px;
+  margin: 0;
   pointer-events: auto;
 }
 
 .hud-top-stats .hud-idle-btn {
-  min-width: 126px;
-  min-height: 34px;
-  padding: 5px 7px;
-  font-size: 11px;
+  min-width: 92px;
+  min-height: 28px;
+  padding: 3px 5px;
+  font-size: 9px;
 }
 
 .hud-top-stats .hud-idle-btn__label {
@@ -2220,9 +2227,9 @@ body {
 }
 
 .hud-top-stats .hud-idle-btn__key {
-  min-width: 1.55em;
-  min-height: 1.55em;
-  font-size: 1.12em;
+  min-width: 1.45em;
+  min-height: 1.45em;
+  font-size: 1em;
 }
 
 .right-hud-stack {
@@ -2709,26 +2716,36 @@ body {
   .hud-top-stats .hud {
     min-width: 0;
     max-width: none;
-    padding: 5px 10px 6px;
+    display: grid;
+    grid-template-columns: minmax(110px, 1fr) auto auto minmax(148px, 1.1fr);
+    align-items: center;
+    gap: 5px;
+    padding: 4px 7px;
     clip-path: none;
     border-radius: 10px;
   }
 
-  .hud-top-stats .hud-command-header,
-  .hud-top-stats .hud-pertinent {
+  .hud-top-stats .hud-command-header {
     display: none !important;
+  }
+
+  .hud-top-stats .hud-pertinent {
+    display: flex !important;
+    margin: 0;
+    padding: 2px 4px;
+    font-size: 10px;
   }
 
   .hud-top-stats .hud-metrics {
     display: flex;
     justify-content: space-between;
-    gap: 8px;
+    gap: 5px;
     padding: 0;
   }
 
   .hud-top-stats .hud-resources {
     display: flex;
-    gap: 10px;
+    gap: 6px;
     min-width: 0;
   }
 
@@ -2798,19 +2815,37 @@ body {
   }
 
   .hud-top-stats .hud-command-action {
-    display: contents;
+    display: flex;
+    justify-content: center;
     margin: 0;
   }
 
-  .mobile-command-btn {
-    position: fixed;
-    right: 8px;
-    bottom: calc(var(--hud-bottom-safe) + var(--hud-console-module-height) + 10px);
+  .hud-top-stats .mobile-command-btn {
+    position: relative;
+    right: auto;
+    bottom: auto;
     width: auto;
-    min-width: 92px;
-    min-height: 40px;
-    padding: 9px 12px;
-    font-size: 0.78rem;
+    min-width: 72px;
+    min-height: 22px;
+    padding: 4px 8px;
+    font-size: 8px;
+  }
+
+  .hud-top-stats .hud-idle-cycle {
+    gap: 4px;
+    margin: 0;
+  }
+
+  .hud-top-stats .hud-idle-btn {
+    min-width: 70px;
+    min-height: 26px;
+    padding: 3px 4px;
+    font-size: 8px;
+  }
+
+  .hud-top-stats .hud-idle-btn__key {
+    min-width: 1.35em;
+    min-height: 1.35em;
   }
 }
 
