@@ -2534,11 +2534,31 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
     this.rmbUsedCameraDrag = false;
 
     if (!wasDrag && eventType !== "pointercancel") {
+      if (this.issueDirectAttackAtScreen(clientX, clientY)) return;
       const pt = this.pointerEventToGroundAt(clientX, clientY);
       if (pt) {
         this.issueRmbAtWorld(pt.x, pt.z, shiftKey, ctrlKey);
       }
     }
+  }
+
+  private issueDirectAttackAtScreen(clientX: number, clientY: number): boolean {
+    const state = this.lastSyncedState;
+    if (!state) return false;
+    const { localPlayerId, submitCommand } = this.options;
+    const selection = state.selections[localPlayerId] ?? [];
+    if (selection.length === 0) return false;
+    const target = this.pickAttackTargetAt(clientX, clientY);
+    if (!target || !this.enemyTargetVisible(target)) return false;
+    if (target.kind === "unit" && this.isEnemyUnit(target.id)) {
+      submitCommand(createGameCommand(localPlayerId, "attack_unit", { targetUnitId: target.id }));
+      return true;
+    }
+    if (target.kind === "structure" && this.isEnemyStructure(target.id)) {
+      submitCommand(createGameCommand(localPlayerId, "attack_structure", { targetStructureId: target.id }));
+      return true;
+    }
+    return false;
   }
 
   private pickResourceFieldIdAt(clientX: number, clientY: number): string | null {
