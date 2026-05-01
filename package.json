@@ -1,0 +1,70 @@
+{
+  "name": "moonrise-empire",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Moonrise Empire by Studio Z 3D (browser-first WebGL RTS; Electron build uses same codebase). PvP: run match:dev (port 8788) alongside vite dev - see README.md.",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "analyze-match": "node scripts/analyze-webrts-export.mjs",
+    "analyze-match:open": "node scripts/open-match-dashboard.mjs",
+    "export:modes": "tsx scripts/export-mode-references.ts",
+    "test:watch": "vitest",
+    "serve": "node server/serve.js",
+    "match:dev": "tsx server/matchDevServer.ts",
+    "lint": "eslint .",
+    "electron:dev": "npm run build && electron .",
+    "electron:build": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.10",
+    "@types/three": "^0.184.0",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.1.0",
+    "@typescript-eslint/parser": "^8.1.0",
+    "electron": "^32.2.5",
+    "electron-builder": "^25.1.8",
+    "eslint": "^9.7.0",
+    "eslint-plugin-import": "^2.29.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.1",
+    "vitest": "^3.0.5",
+    "ws": "^8.20.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "electron/main.js",
+  "build": {
+    "appId": "com.studioz3d.moonriseempire",
+    "productName": "Moonrise Empire",
+    "copyright": "Copyright (c) 2026 Studio Z 3D. All rights reserved.",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**",
+      "dist/**",
+      "node_modules/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist",
+        "to": "dist"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
