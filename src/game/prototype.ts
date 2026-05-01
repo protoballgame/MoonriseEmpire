@@ -280,6 +280,7 @@ export class PrototypeView {
   private lmbTrack: LmbTrack | null = null;
   private readonly activeTouchPointers = new Map<number, { x: number; y: number }>();
   private touchPinchPrevDistance: number | null = null;
+  private touchGesturePrevCentroid: { x: number; y: number } | null = null;
   /** Same-screen double pick on one unit → select all owned units of that kind (RTS double-click). */
   private lastLmbUnitPickForDouble: {
     unitId: string;
@@ -1737,10 +1738,9 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
           this.activeTouchPointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
           if (this.activeTouchPointers.size >= 2) {
             this.touchPinchPrevDistance = this.currentTouchPinchDistance();
+            this.touchGesturePrevCentroid = this.currentTouchCentroid();
             this.lmbTrack = null;
-            window.removeEventListener("pointermove", this.onLmbWindowMove);
-            window.removeEventListener("pointerup", this.onLmbWindowUp);
-            window.removeEventListener("pointercancel", this.onLmbWindowUp);
+            this.marqueeDiv.style.display = "none";
             return;
           }
         }
@@ -1970,6 +1970,15 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
       ev.preventDefault();
       this.activeTouchPointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
       if (this.activeTouchPointers.size >= 2) {
+        const centroid = this.currentTouchCentroid();
+        if (centroid && this.touchGesturePrevCentroid) {
+          const dx = centroid.x - this.touchGesturePrevCentroid.x;
+          const dy = centroid.y - this.touchGesturePrevCentroid.y;
+          if (Math.hypot(dx, dy) > 0.25) {
+            this.applyMoonSpinFromScreenDelta(dx, dy);
+          }
+        }
+        this.touchGesturePrevCentroid = centroid;
         const pinch = this.currentTouchPinchDistance();
         if (pinch !== null && this.touchPinchPrevDistance !== null && this.touchPinchPrevDistance > 1) {
           const ratio = pinch / this.touchPinchPrevDistance;
@@ -1981,27 +1990,12 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
           this.updateCameraTransform();
         }
         this.touchPinchPrevDistance = pinch;
-        if (this.lmbTrack) this.lmbTrack.cameraDrag = true;
         return;
       }
     }
     if (!this.lmbTrack || (ev.pointerType !== "touch" && !(ev.buttons & 1))) return;
 
     const dist = Math.hypot(ev.clientX - this.lmbTrack.startX, ev.clientY - this.lmbTrack.startY);
-    if (this.lmbTrack.pointerType === "touch") {
-      const dx = ev.clientX - this.lmbTrack.lastX;
-      const dy = ev.clientY - this.lmbTrack.lastY;
-      this.lmbTrack.lastX = ev.clientX;
-      this.lmbTrack.lastY = ev.clientY;
-      if (dist > RMB_DRAG_THRESHOLD_PX || this.lmbTrack.cameraDrag) {
-        this.lmbTrack.cameraDrag = true;
-        if (Math.hypot(dx, dy) > 0.25) {
-          this.applyMoonSpinFromScreenDelta(dx, dy);
-          this.updateCameraTransform();
-        }
-      }
-      return;
-    }
     if (dist > LMB_MARQUEE_THRESHOLD_PX || this.lmbTrack.marquee) {
       this.lmbTrack.marquee = true;
       this.updateMarqueeBox(this.lmbTrack.startX, this.lmbTrack.startY, ev.clientX, ev.clientY);
@@ -2012,7 +2006,13 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
     if (ev.pointerType === "touch") {
       ev.preventDefault();
       this.activeTouchPointers.delete(ev.pointerId);
-      if (this.activeTouchPointers.size < 2) this.touchPinchPrevDistance = null;
+      if (this.activeTouchPointers.size < 2) {
+        this.touchPinchPrevDistance = null;
+        this.touchGesturePrevCentroid = null;
+      } else {
+        this.touchPinchPrevDistance = this.currentTouchPinchDistance();
+        this.touchGesturePrevCentroid = this.currentTouchCentroid();
+      }
     }
     if (ev.button !== 0 && ev.type !== "pointercancel") return;
     if (!this.lmbTrack) {
@@ -2392,6 +2392,18 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
     const a = points[0]!;
     const b = points[1]!;
     return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
+  private currentTouchCentroid(): { x: number; y: number } | null {
+    const points = [...this.activeTouchPointers.values()];
+    if (points.length < 2) return null;
+    let x = 0;
+    let y = 0;
+    for (const p of points) {
+      x += p.x;
+      y += p.y;
+    }
+    return { x: x / points.length, y: y / points.length };
   }
 
   private handleRmbCanvasMove(ev: PointerEvent): void {
