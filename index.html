@@ -3,28 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="
-        default-src 'self';
-        script-src 'self' https://vibej.am;
-        style-src 'self' 'unsafe-inline';
-        img-src 'self' data: blob:;
-        connect-src 'self' ws: wss: https://api.ipify.org;
-        font-src 'self' data:;
-        object-src 'none';
-        base-uri 'self';
-        frame-ancestors 'none'
-      "
-    />
-    <meta name="copyright" content="Copyright (c) 2026 Studio Z 3D. All rights reserved." />
-    <title>Moonrise Empire - Studio Z 3D</title>
+    <title>Moonrise Empire — opening…</title>
+    <meta http-equiv="refresh" content="0; url=mrts.html" />
   </head>
   <body>
-    <div id="launch-root"></div>
-    <div id="app"></div>
-    <script async src="https://vibej.am/2026/widget.js"></script>
-    <script type="module" src="/src/entry.ts"></script>
+    <p><a href="mrts.html">Open Moonrise Empire (mrts.html)</a></p>
+    <script>
+      (function () {
+        var q = window.location.search || "";
+        var h = window.location.hash || "";
+        if (!/mrts\.html/i.test(window.location.pathname)) {
+          window.location.replace("mrts.html" + q + h);
+        }
+      })();
+    </script>
   </body>
 </html>
-

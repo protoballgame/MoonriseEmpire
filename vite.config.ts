@@ -1,5 +1,10 @@
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+
+/** Production / GoDaddy entry must be `mrts.html` (not index). Dev-only `index.html` redirects here. */
 export default defineConfig({
   base: "./",
   test: {
@@ -12,6 +17,7 @@ export default defineConfig({
     sourcemap: false,
     chunkSizeWarningLimit: 650,
     rollupOptions: {
+      input: resolve(__dirname, "mrts.html"),
       output: {
         manualChunks(id) {
           if (id.includes("node_modules/three/examples")) return "three-examples";
