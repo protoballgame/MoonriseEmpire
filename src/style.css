@@ -3061,7 +3061,7 @@ body {
   inset: 0;
   z-index: 1000;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: clamp(12px, 3vw, 28px);
   background: var(--bg);
@@ -3095,12 +3095,22 @@ body {
     linear-gradient(180deg, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.68));
 }
 
+.launch-screen__stack {
+  position: relative;
+  z-index: 1;
+  width: min(64rem, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: clamp(16px, 2.4vw, 28px);
+  box-sizing: border-box;
+}
+
 .launch-screen__panel {
   position: relative;
   z-index: 1;
-  width: min(46rem, 100%);
-  max-height: calc(100vh - clamp(24px, 6vw, 56px));
-  overflow: auto;
+  width: 100%;
+  overflow: visible;
   padding: clamp(1.1rem, 2.4vw, 1.6rem);
   border-radius: 16px;
   border: 1px solid #4a5060;
@@ -3419,6 +3429,446 @@ body {
   color: #d7e9ff;
 }
 
+.launch-guide {
+  margin-top: 1.25rem;
+  padding: clamp(14px, 2vw, 22px);
+  border-radius: 14px;
+  border: 1px solid rgba(190, 216, 220, 0.28);
+  background:
+    radial-gradient(circle at 13% 8%, rgba(74, 240, 255, 0.13), transparent 28%),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.015) 2px 3px),
+    linear-gradient(160deg, rgba(30, 34, 44, 0.94), rgba(9, 14, 22, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.11),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.55),
+    0 0 0 2px rgba(42, 46, 56, 0.72),
+    0 16px 42px rgba(0, 0, 0, 0.48),
+    0 0 46px rgba(0, 160, 200, 0.09);
+}
+
+.launch-screen__panel--guide .launch-guide {
+  margin-top: 0;
+}
+
+.launch-guide__console-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 0.85rem;
+  margin-bottom: 0.9rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.launch-guide__kicker {
+  margin: 0;
+  color: var(--moonrise-metal-mid);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+
+.launch-guide h2 {
+  margin: 0.28rem 0 0;
+  color: #dffbff;
+  font-family: "Rajdhani", "Orbitron", sans-serif;
+  font-size: clamp(1.5rem, 3.6vw, 2.2rem);
+  line-height: 1.02;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-shadow: 0 0 18px rgba(0, 229, 255, 0.22);
+}
+
+.launch-guide__status-strip {
+  display: flex;
+  gap: 7px;
+  padding-top: 5px;
+  flex-shrink: 0;
+}
+
+.launch-guide__led {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #4af0ff;
+  box-shadow: 0 0 8px currentColor, inset 0 0 0 1px rgba(255, 255, 255, 0.26);
+}
+
+.launch-guide__led--green {
+  color: #32d74b;
+  background: radial-gradient(circle at 40% 35%, #b8ffc0, #32d74b);
+}
+
+.launch-guide__led--amber {
+  color: var(--hud-amber);
+  background: radial-gradient(circle at 40% 35%, #ffd080, var(--hud-amber));
+}
+
+.launch-guide__led--red {
+  color: #ff5a55;
+  background: radial-gradient(circle at 40% 35%, #ff9a96, #ff3b30);
+}
+
+.launch-guide p {
+  margin: 0;
+  color: #a8bddc;
+  line-height: 1.42;
+}
+
+.launch-guide__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.06fr) minmax(260px, 0.94fr);
+  gap: 12px;
+}
+
+.launch-guide__brief-panel,
+.launch-guide__intel-panel,
+.launch-guide__rps,
+.launch-guide__structures {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(180deg, rgba(30, 34, 48, 0.84), rgba(9, 13, 20, 0.9));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.44),
+    0 5px 16px rgba(0, 0, 0, 0.38);
+}
+
+.launch-guide__brief-panel,
+.launch-guide__intel-panel {
+  padding: 14px;
+}
+
+.launch-guide__panel-label {
+  margin-bottom: 10px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  color: var(--moonrise-metal-mid);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.launch-guide__premise,
+.launch-guide__objective {
+  border-radius: 7px;
+  border: 1px solid #1a2030;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 3px, rgba(0, 0, 0, 0.18) 3px 4px),
+    #080c10;
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.74),
+    inset 0 0 20px rgba(0, 200, 255, 0.035);
+}
+
+.launch-guide__premise {
+  padding: 12px;
+  color: var(--hud-amber);
+  font-family: "Share Tech Mono", monospace;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 10px rgba(255, 176, 32, 0.25);
+}
+
+.launch-guide__objective {
+  display: grid;
+  gap: 3px;
+  margin-top: 10px;
+  padding: 10px 12px;
+}
+
+.launch-guide__objective span {
+  color: var(--hud-cyan-dim);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.launch-guide__objective strong {
+  color: var(--hud-amber);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 1.03rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(255, 176, 32, 0.45);
+}
+
+.launch-guide__quickstart {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.launch-guide__step {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(120, 180, 255, 0.16);
+  background:
+    linear-gradient(90deg, rgba(74, 240, 255, 0.07), transparent 38%),
+    rgba(2, 7, 12, 0.46);
+}
+
+.launch-guide__step-num {
+  width: 34px;
+  height: 30px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(74, 240, 255, 0.34);
+  background: linear-gradient(180deg, rgba(0, 229, 255, 0.18), rgba(0, 34, 52, 0.72));
+  color: var(--hud-cyan);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 0.76rem;
+  font-weight: 800;
+  box-shadow: inset 0 0 14px rgba(0, 229, 255, 0.06);
+}
+
+.launch-guide__step strong,
+.launch-guide__unit strong,
+.launch-guide__structures strong {
+  display: block;
+  color: #edf8ff;
+  font-family: "Rajdhani", "Orbitron", sans-serif;
+  font-size: 1.08rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.launch-guide__step p,
+.launch-guide__unit p,
+.launch-guide__structures p {
+  margin-top: 0.2rem;
+  font-size: calc(var(--hud-compact-font) / 1.16);
+  line-height: 1.35;
+}
+
+.launch-guide__unit-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.launch-guide__unit {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(150, 162, 178, 0.26);
+  background:
+    radial-gradient(circle at 10px 10px, rgba(115, 124, 145, 0.58) 0 2px, transparent 3px),
+    radial-gradient(circle at calc(100% - 10px) 10px, rgba(115, 124, 145, 0.48) 0 2px, transparent 3px),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.012) 2px 3px),
+    linear-gradient(160deg, rgba(49, 54, 66, 0.9), rgba(24, 28, 38, 0.96) 46%, rgba(12, 15, 22, 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.48),
+    0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.launch-guide__unit small {
+  display: block;
+  color: #89a7cc;
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+
+.launch-guide__statline {
+  display: block;
+  margin-top: 5px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 176, 32, 0.22);
+  background:
+    linear-gradient(90deg, rgba(255, 176, 32, 0.12), transparent 70%),
+    rgba(7, 10, 14, 0.7);
+  color: var(--hud-amber);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 8px rgba(255, 176, 32, 0.2);
+}
+
+.launch-guide__unit-model {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  color: #061018;
+  font-family: "Orbitron", sans-serif;
+  font-weight: 900;
+  box-shadow:
+    inset 0 2px 7px rgba(255, 255, 255, 0.5),
+    inset 0 -6px 12px rgba(0, 0, 0, 0.28),
+    0 0 18px rgba(255, 255, 255, 0.12);
+}
+
+.launch-guide__unit-model--neutral {
+  border-radius: 50%;
+  background: linear-gradient(145deg, #c8fff1, #6ee0ba);
+}
+
+.launch-guide__unit-model--rock {
+  background: linear-gradient(145deg, #ffb18a, #b96945);
+  clip-path: polygon(24% 5%, 78% 10%, 100% 44%, 74% 96%, 22% 86%, 0 42%);
+}
+
+.launch-guide__unit-model--paper {
+  background: linear-gradient(145deg, #f3ecff, #b894ff);
+  border-radius: 7px 16px 7px 16px;
+}
+
+.launch-guide__unit-model--scissors {
+  background: linear-gradient(145deg, #d8fbff, #67cce8);
+  clip-path: polygon(50% 0, 68% 30%, 100% 20%, 78% 51%, 100% 82%, 67% 70%, 50% 100%, 33% 70%, 0 82%, 22% 51%, 0 20%, 32% 30%);
+}
+
+.launch-guide__bottom-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.launch-guide__rps {
+  padding: 12px;
+}
+
+.launch-guide__rps-chain {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.launch-guide__rps-chain span {
+  position: relative;
+  padding: 10px 12px 10px 14px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 208, 120, 0.28);
+  background:
+    linear-gradient(90deg, rgba(255, 176, 32, 0.18), transparent 52%),
+    repeating-linear-gradient(0deg, transparent 0 3px, rgba(0, 0, 0, 0.18) 3px 4px),
+    linear-gradient(180deg, rgba(38, 30, 18, 0.98), rgba(12, 10, 8, 0.96));
+  color: #f4d79b;
+  text-align: left;
+  font-size: calc(var(--hud-compact-font) / 1.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.52);
+}
+
+.launch-guide__rps-chain span::before {
+  content: "";
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--hud-amber);
+  box-shadow: 0 0 8px rgba(255, 176, 32, 0.6);
+}
+
+.launch-guide__combat-tip-btn {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 5px;
+  border: 1px solid rgba(74, 240, 255, 0.28);
+  background:
+    linear-gradient(180deg, rgba(20, 56, 72, 0.75), rgba(6, 14, 22, 0.92)),
+    repeating-linear-gradient(90deg, transparent 0 2px, rgba(255, 255, 255, 0.02) 2px 3px);
+  color: var(--hud-cyan);
+  font-family: "Share Tech Mono", monospace;
+  font-size: calc(var(--hud-compact-font) / 1.12);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(74, 240, 255, 0.35);
+  cursor: default;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.45);
+}
+
+.launch-guide__combat-tip-btn:hover {
+  border-color: rgba(74, 240, 255, 0.42);
+}
+
+.launch-guide__hotkeys {
+  margin: 12px 0 0;
+  padding: 11px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(90deg, rgba(74, 240, 255, 0.06), transparent 55%),
+    linear-gradient(180deg, rgba(18, 22, 32, 0.92), rgba(8, 11, 18, 0.96));
+  color: #b8cce8;
+  font-size: calc(var(--hud-compact-font) / 1.14);
+  line-height: 1.45;
+}
+
+.launch-guide__kbd {
+  display: inline-block;
+  padding: 0.12em 0.45em;
+  margin: 0 0.08em;
+  border-radius: 4px;
+  border: 1px solid rgba(74, 240, 255, 0.35);
+  background: rgba(0, 0, 0, 0.45);
+  color: var(--hud-cyan);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 0.9em;
+  font-weight: 700;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+}
+
+.launch-guide__structures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+}
+
+.launch-guide__structures > div {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(74, 240, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(0, 229, 255, 0.05), transparent),
+    #080c10;
+  box-shadow: inset 0 2px 7px rgba(0, 0, 0, 0.64);
+}
+
+.launch-guide__structure-icon {
+  display: inline-flex;
+  min-width: 38px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+  border-radius: 7px;
+  border: 1px solid rgba(74, 240, 255, 0.34);
+  color: var(--hud-cyan);
+  font-family: "Share Tech Mono", monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  background: rgba(0, 229, 255, 0.08);
+  box-shadow: inset 0 0 14px rgba(0, 229, 255, 0.05);
+}
+
 .launch-screen__pvp {
   margin-top: 1.25rem;
   padding-top: 1.25rem;
@@ -3582,7 +4032,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.28rem;
-  margin: 1.25rem 0 0;
+  margin: 0;
   font-size: calc(var(--hud-compact-font) / var(--phi));
   color: var(--moonrise-metal-mid);
   letter-spacing: 0.06em;
@@ -3616,12 +4066,28 @@ body {
 }
 
 @media (max-width: 640px) {
-  .launch-screen__panel {
+  .launch-screen__stack {
     width: min(28rem, 100%);
   }
 
   .launch-screen__actions {
     grid-template-columns: 1fr;
+  }
+
+  .launch-guide__console-head,
+  .launch-guide__layout,
+  .launch-guide__bottom-row,
+  .launch-guide__rps-chain,
+  .launch-guide__structures {
+    grid-template-columns: 1fr;
+  }
+
+  .launch-guide__console-head {
+    display: grid;
+  }
+
+  .launch-guide__status-strip {
+    padding-top: 0;
   }
 
   .launch-screen__mode-info {

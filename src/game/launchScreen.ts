@@ -6,6 +6,25 @@
 import * as THREE from "three";
 import { setupMoonAtmosphere } from "./visual/moonEnvironment";
 import { hostnameForMatchWebSocket, PUBLIC_MATCH_WS_FALLBACK } from "./net/resolveMatchWebSocketUrl";
+import {
+  MINERAL_DEPOT_DEPOSIT_MULTIPLIER,
+  POWER_SPIRE_ENERGY_PER_SEC
+} from "../core/economyConstants";
+import { tuning } from "../core/runtimeTuning";
+import { defensiveStructureStats, structureVisionRange } from "../core/structureStats";
+
+function formatGuideStat(value: number, digits = 1): string {
+  return value.toFixed(digits).replace(/\.0$/, "");
+}
+
+function unitGuideStat(kind: "N" | "R" | "P" | "S"): string {
+  const u = tuning.units[kind];
+  const dps = u.damage / u.cooldown;
+  return `HP ${Math.round(u.hp)} · ${formatGuideStat(u.damage)} dmg / ${formatGuideStat(u.cooldown, 2)}s · ${formatGuideStat(dps)} DPS`;
+}
+
+const turretGuideStats = defensiveStructureStats("defense_obelisk");
+const turretGuideDps = turretGuideStats ? turretGuideStats.damage / turretGuideStats.cooldownSec : 0;
 
 function isLocalDevHost(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
@@ -154,98 +173,237 @@ function preservedParamsMinusMatchSeat(): URLSearchParams {
 export function mountLaunchScreen(launchRoot: HTMLElement, _appEl: HTMLElement, onStartGame: () => void): void {
   launchRoot.className = "launch-screen";
   launchRoot.innerHTML = `
-    <div class="launch-screen__panel" role="dialog" aria-labelledby="launch-title">
-      <p class="launch-screen__eyebrow">Studio Z 3D presents</p>
-      <h1 class="launch-screen__title" id="launch-title">Moonrise Empire</h1>
-      <p class="launch-screen__subtitle" id="launchSubtitle">A cozy lunar RTS - pick a match</p>
-      <div class="launch-screen__pulse" aria-hidden="true">
-        <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
-      </div>
-      <div class="launch-screen__actions" id="launchMainActions">
-        <section class="launch-screen__mode-card">
-          <div class="launch-screen__mode-info">
-            <span class="launch-screen__mode-kicker">Network ops</span>
-            <strong>Play vs Player</strong>
-            <small>Prepare a host console and guest link for multiplayer.</small>
+    <div class="launch-screen__stack">
+      <div class="launch-screen__panel launch-screen__panel--play" role="dialog" aria-labelledby="launch-title">
+        <p class="launch-screen__eyebrow">Studio Z 3D presents</p>
+        <h1 class="launch-screen__title" id="launch-title">Moonrise Empire</h1>
+        <p class="launch-screen__subtitle" id="launchSubtitle">A cozy lunar RTS - pick a match</p>
+        <div class="launch-screen__pulse" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="launch-screen__actions" id="launchMainActions">
+          <section class="launch-screen__mode-card">
+            <div class="launch-screen__mode-info">
+              <span class="launch-screen__mode-kicker">Network ops</span>
+              <strong>Play vs Player</strong>
+              <small>Prepare a host console and guest link for multiplayer.</small>
+            </div>
+            <button type="button" class="launch-screen__jump-btn" id="launchVsPvpExpand" aria-label="Configure player versus player">
+              Play
+            </button>
+          </section>
+          <section class="launch-screen__mode-card">
+            <div class="launch-screen__mode-info">
+              <span class="launch-screen__mode-kicker">Solo sortie</span>
+              <strong>Play vs CPU</strong>
+              <small>Launch a skirmish against the computer commander.</small>
+            </div>
+            <button type="button" class="launch-screen__jump-btn" id="launchVsCpu" aria-label="Play versus computer">
+              Play
+            </button>
+          </section>
+        </div>
+        <div class="launch-screen__pvp" id="launchPvpSection" hidden>
+          <p class="launch-screen__hint">
+            Start a private 1v1 room, copy the invite link, and send it to your opponent. Host plays
+            <strong>Player 1</strong> (blue); the invite joins as <strong>Player 2</strong> (red).
+          </p>
+          <p class="launch-screen__note" id="launchNetNote">Host a room, copy an invite, or join an open room below.</p>
+          <div class="launch-screen__rooms" aria-live="polite">
+            <div class="launch-screen__rooms-head">
+              <strong>Open Rooms</strong>
+              <button type="button" class="launch-screen__btn launch-screen__btn--mini" id="launchRefreshRooms">Refresh</button>
+            </div>
+            <div class="launch-screen__rooms-list" id="launchOpenRooms">Checking for rooms...</div>
           </div>
-          <button type="button" class="launch-screen__jump-btn" id="launchVsPvpExpand" aria-label="Configure player versus player">
-            Play
-          </button>
-        </section>
-        <section class="launch-screen__mode-card">
-          <div class="launch-screen__mode-info">
-            <span class="launch-screen__mode-kicker">Solo sortie</span>
-            <strong>Play vs CPU</strong>
-            <small>Launch a skirmish against the computer commander.</small>
-          </div>
-          <button type="button" class="launch-screen__jump-btn" id="launchVsCpu" aria-label="Play versus computer">
-            Play
-          </button>
-        </section>
-      </div>
-      <div class="launch-screen__pvp" id="launchPvpSection" hidden>
-        <p class="launch-screen__hint">
-          Start a private 1v1 room, copy the invite link, and send it to your opponent. Host plays
-          <strong>Player 1</strong> (blue); the invite joins as <strong>Player 2</strong> (red).
-        </p>
-        <p class="launch-screen__note" id="launchNetNote">Host a room, copy an invite, or join an open room below.</p>
-        <div class="launch-screen__rooms" aria-live="polite">
-          <div class="launch-screen__rooms-head">
-            <strong>Open Rooms</strong>
-            <button type="button" class="launch-screen__btn launch-screen__btn--mini" id="launchRefreshRooms">Refresh</button>
-          </div>
-          <div class="launch-screen__rooms-list" id="launchOpenRooms">Checking for rooms...</div>
-        </div>
-        <label class="launch-screen__label" for="launchRoomField">Room code</label>
-        <div class="launch-screen__row">
-          <input
-            type="text"
-            class="launch-screen__input launch-screen__input--mono launch-screen__room-input"
-            id="launchRoomField"
-            autocomplete="off"
-            spellcheck="false"
-            maxlength="32"
-          />
-          <button type="button" class="launch-screen__btn launch-screen__btn--primary" id="launchStartHost">
-            Host Match
-          </button>
-          <button type="button" class="launch-screen__btn launch-screen__btn--ghost" id="launchJoinRoom">
-            Join Room
-          </button>
-          <button type="button" class="launch-screen__btn launch-screen__btn--ghost" id="launchCopyJoin">Copy Invite</button>
-        </div>
-        <label class="launch-screen__label" for="launchJoinUrl">Invite link</label>
-        <div class="launch-screen__row">
-          <input type="text" class="launch-screen__input launch-screen__input--mono" id="launchJoinUrl" readonly />
-        </div>
-        <label class="launch-screen__label" for="launchJoinPaste">Join from invite link</label>
-        <div class="launch-screen__row">
-          <input type="text" class="launch-screen__input launch-screen__input--mono" id="launchJoinPaste" placeholder="Paste invite link here" />
-          <button type="button" class="launch-screen__btn launch-screen__btn--ghost" id="launchJoinPasted">
-            Join
-          </button>
-        </div>
-        <details class="launch-screen__advanced">
-          <summary>Advanced / LAN setup</summary>
-          <label class="launch-screen__label" for="launchHostField">Address guests should open</label>
+          <label class="launch-screen__label" for="launchRoomField">Room code</label>
           <div class="launch-screen__row">
             <input
               type="text"
-              class="launch-screen__input"
-              id="launchHostField"
+              class="launch-screen__input launch-screen__input--mono launch-screen__room-input"
+              id="launchRoomField"
               autocomplete="off"
               spellcheck="false"
-              placeholder="e.g. 192.168.1.50 or game.example.com"
-              aria-describedby="launchHostHelp"
+              maxlength="32"
             />
-            <button type="button" class="launch-screen__btn launch-screen__btn--ghost" id="launchFetchPublicIp" title="Looks up your public IPv4 (office networks may block this)">
-              Use public IP
+            <button type="button" class="launch-screen__btn launch-screen__btn--primary" id="launchStartHost">
+              Host Match
+            </button>
+            <button type="button" class="launch-screen__btn launch-screen__btn--ghost" id="launchJoinRoom">
+              Join Room
+            </button>
+            <button type="button" class="launch-screen__btn launch-screen__btn--ghost" id="launchCopyJoin">Copy Invite</button>
+          </div>
+          <label class="launch-screen__label" for="launchJoinUrl">Invite link</label>
+          <div class="launch-screen__row">
+            <input type="text" class="launch-screen__input launch-screen__input--mono" id="launchJoinUrl" readonly />
+          </div>
+          <label class="launch-screen__label" for="launchJoinPaste">Join from invite link</label>
+          <div class="launch-screen__row">
+            <input type="text" class="launch-screen__input launch-screen__input--mono" id="launchJoinPaste" placeholder="Paste invite link here" />
+            <button type="button" class="launch-screen__btn launch-screen__btn--ghost" id="launchJoinPasted">
+              Join
             </button>
           </div>
-          <p class="launch-screen__help" id="launchHostHelp">
-            Optional: override the address used when copying invite links for LAN testing.
-          </p>
-        </details>
+          <details class="launch-screen__advanced">
+            <summary>Advanced / LAN setup</summary>
+            <label class="launch-screen__label" for="launchHostField">Address guests should open</label>
+            <div class="launch-screen__row">
+              <input
+                type="text"
+                class="launch-screen__input"
+                id="launchHostField"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="e.g. 192.168.1.50 or game.example.com"
+                aria-describedby="launchHostHelp"
+              />
+              <button type="button" class="launch-screen__btn launch-screen__btn--ghost" id="launchFetchPublicIp" title="Looks up your public IPv4 (office networks may block this)">
+                Use public IP
+              </button>
+            </div>
+            <p class="launch-screen__help" id="launchHostHelp">
+              Optional: override the address used when copying invite links for LAN testing.
+            </p>
+          </details>
+        </div>
+      </div>
+      <div class="launch-screen__panel launch-screen__panel--guide" aria-labelledby="launchGuideTitle">
+      <section class="launch-guide" aria-labelledby="launchGuideTitle">
+        <div class="launch-guide__console-head">
+          <div>
+            <p class="launch-guide__kicker">Field Manual // New Commander Briefing</p>
+            <h2 id="launchGuideTitle">First mission: build faster than your nemesis.</h2>
+          </div>
+          <div class="launch-guide__status-strip" aria-hidden="true">
+            <span class="launch-guide__led launch-guide__led--green"></span>
+            <span class="launch-guide__led launch-guide__led--amber"></span>
+            <span class="launch-guide__led launch-guide__led--red"></span>
+          </div>
+        </div>
+        <div class="launch-guide__layout">
+          <div class="launch-guide__brief-panel">
+            <div class="launch-guide__panel-label">Mission Brief</div>
+            <p class="launch-guide__premise">
+              You have landed on the moon and it is time to build your base. Your arch nemesis has landed
+              on the opposite side and they are racing to set up their own base. Build your economy, build
+              your military, and defeat the enemy Command Core.
+            </p>
+            <div class="launch-guide__objective">
+              <span>Win condition</span>
+              <strong>Destroy the enemy Command Core</strong>
+            </div>
+            <div class="launch-guide__quickstart">
+              <div class="launch-guide__step">
+                <span class="launch-guide__step-num">01</span>
+                <div>
+                  <strong>Select Neutrals</strong>
+                  <p>Neutral units mine, build, finish construction, and can attack in a pinch.</p>
+                </div>
+              </div>
+              <div class="launch-guide__step">
+                <span class="launch-guide__step-num">02</span>
+                <div>
+                  <strong>Power the base</strong>
+                  <p>Solar Arrays generate energy for structures and army production.</p>
+                </div>
+              </div>
+              <div class="launch-guide__step">
+                <span class="launch-guide__step-num">03</span>
+                <div>
+                  <strong>Boost mining</strong>
+                  <p>Mineral Depots help workers unload near forward mineral fields for faster income.</p>
+                </div>
+              </div>
+              <div class="launch-guide__step">
+                <span class="launch-guide__step-num">04</span>
+                <div>
+                  <strong>Expand mid-map</strong>
+                  <p>The richest mineral fields spawn between bases, so both armies collide there.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="launch-guide__intel-panel">
+            <div class="launch-guide__panel-label">Unit Intel</div>
+            <div class="launch-guide__unit-grid" aria-label="Unit guide">
+              <article class="launch-guide__unit launch-guide__unit--neutral">
+                <span class="launch-guide__unit-model launch-guide__unit-model--neutral">N</span>
+                <div>
+                  <strong>Neutral</strong>
+                  <small>Worker / builder / light ranged</small>
+                  <span class="launch-guide__statline">${unitGuideStat("N")} · ${formatGuideStat(tuning.units.N.range)}m range</span>
+                  <p>Mines, builds, and keeps your economy alive.</p>
+                </div>
+              </article>
+              <article class="launch-guide__unit launch-guide__unit--rock">
+                <span class="launch-guide__unit-model launch-guide__unit-model--rock">R</span>
+                <div>
+                  <strong>Rock</strong>
+                  <small>Beats Scissors / weak to Paper</small>
+                  <span class="launch-guide__statline">${unitGuideStat("R")} · ${formatGuideStat(tuning.units.R.range)}m range</span>
+                  <p>Durable melee pressure for punching through front lines.</p>
+                </div>
+              </article>
+              <article class="launch-guide__unit launch-guide__unit--paper">
+                <span class="launch-guide__unit-model launch-guide__unit-model--paper">P</span>
+                <div>
+                  <strong>Paper</strong>
+                  <small>Beats Rock / weak to Scissors</small>
+                  <span class="launch-guide__statline">${unitGuideStat("P")} · ${formatGuideStat(tuning.units.P.range)}m range</span>
+                  <p>Ranged damage. Keep it protected at standoff distance.</p>
+                </div>
+              </article>
+              <article class="launch-guide__unit launch-guide__unit--scissors">
+                <span class="launch-guide__unit-model launch-guide__unit-model--scissors">S</span>
+                <div>
+                  <strong>Scissors</strong>
+                  <small>Beats Paper / weak to Rock</small>
+                  <span class="launch-guide__statline">${unitGuideStat("S")} · ${formatGuideStat(tuning.units.S.range)}m range</span>
+                  <p>Fast melee attackers for punishing exposed Paper and workers.</p>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+        <div class="launch-guide__bottom-row">
+          <div class="launch-guide__rps" aria-label="Rock Paper Scissors matchup guide">
+            <div class="launch-guide__panel-label">Combat Rule</div>
+            <div class="launch-guide__rps-chain">
+              <span><b>Rock</b> beats <b>Scissors</b></span>
+              <span><b>Scissors</b> beats <b>Paper</b></span>
+              <span><b>Paper</b> beats <b>Rock</b></span>
+            </div>
+            <button type="button" class="launch-guide__combat-tip-btn" tabindex="0">
+              Ctrl + click to attack move
+            </button>
+          </div>
+          <div class="launch-guide__structures">
+            <div>
+              <span class="launch-guide__structure-icon">EN</span>
+              <strong>Solar</strong>
+              <span class="launch-guide__statline">+${formatGuideStat(POWER_SPIRE_ENERGY_PER_SEC, 2)} energy/sec</span>
+              <p>Passive energy.</p>
+            </div>
+            <div>
+              <span class="launch-guide__structure-icon">DEP</span>
+              <strong>Depot</strong>
+              <span class="launch-guide__statline">${formatGuideStat(MINERAL_DEPOT_DEPOSIT_MULTIPLIER, 2)}x mineral payout</span>
+              <p>Boosts mineral runs.</p>
+            </div>
+            <div>
+              <span class="launch-guide__structure-icon">TWR</span>
+              <strong>Turret</strong>
+              <span class="launch-guide__statline">${formatGuideStat(turretGuideDps)} DPS · ${formatGuideStat(structureVisionRange("defense_obelisk"))}m sight</span>
+              <p>Huge line of sight and shoots enemies.</p>
+            </div>
+          </div>
+        </div>
+        <p class="launch-guide__hotkeys">
+          With units or buildings selected, press <kbd class="launch-guide__kbd">Ctrl</kbd> +
+          <kbd class="launch-guide__kbd">1</kbd> to set control group 1 — number keys recall saved groups.
+        </p>
+      </section>
       </div>
       <footer class="launch-screen__footer">
         <span>Moonrise Empire by Studio Z 3D / Real-time mode / jam build</span>
