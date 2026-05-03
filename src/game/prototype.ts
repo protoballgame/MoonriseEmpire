@@ -226,6 +226,12 @@ export class PrototypeView {
     start: THREE.Vector3;
     end: THREE.Vector3;
   }[] = [];
+  private readonly impactBursts: {
+    mesh: THREE.Mesh;
+    age: number;
+    maxAge: number;
+    baseScale: number;
+  }[] = [];
   /** Ground-plane rings when admin panel is open: cyan = vision, orange = attack. */
   private readonly adminRangeLayer = new THREE.Group();
   private readonly adminRangeByUnitId = new Map<
@@ -1275,10 +1281,11 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
   }
 
   /** Control groups for the HUD bar (local player). Empty groups render as dim slots. */
-  getControlGroupsHudSlots(): { digit: number; count: number; active: boolean }[] {
+  getControlGroupsHudSlots(): { digit: number; count: number; active: boolean; canAssign: boolean }[] {
     const keyboardOrder = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
     const currentUnits = this.lastSyncedState?.selections[this.options.localPlayerId] ?? [];
     const currentStructures = this.lastSyncedState?.structureSelections[this.options.localPlayerId] ?? [];
+    const canAssign = currentUnits.length + currentStructures.length > 0;
     return keyboardOrder.map((digit) => {
       const g = this.controlGroups[digit]!;
       const aliveUnits = this.filterAliveOwnedIds(g.unitIds);
@@ -1286,12 +1293,32 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
       return {
         digit,
         count: aliveUnits.length + aliveStructs.length,
+        canAssign,
         active:
           aliveUnits.length + aliveStructs.length > 0 &&
           idsMatch(currentUnits, aliveUnits) &&
           idsMatch(currentStructures, aliveStructs)
       };
     });
+  }
+
+  assignOrRecallControlGroup(digit: number): void {
+    if (!Number.isInteger(digit) || digit < 0 || digit > 9) return;
+    const sel = this.lastSyncedState?.selections[this.options.localPlayerId] ?? [];
+    const structSel = this.lastSyncedState?.structureSelections[this.options.localPlayerId] ?? [];
+    if (sel.length + structSel.length > 0) {
+      this.assignControlGroup(digit);
+      return;
+    }
+    this.recallControlGroup(digit);
+  }
+
+  assignControlGroup(digit: number): void {
+    if (!Number.isInteger(digit) || digit < 0 || digit > 9) return;
+    const sel = this.lastSyncedState?.selections[this.options.localPlayerId] ?? [];
+    const structSel = this.lastSyncedState?.structureSelections[this.options.localPlayerId] ?? [];
+    this.controlGroups[digit] = { unitIds: [...sel], structureIds: [...structSel] };
+    this.lastControlGroupTapMs[digit] = 0;
   }
 
   recallControlGroup(digit: number): void {
@@ -1361,11 +1388,36 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
     });
   }
 
+  spawnImpactBurst(
+    at: { x: number; y: number; z: number },
+    opts?: { color?: number; radius?: number; maxAge?: number }
+  ): void {
+    const radius = opts?.radius ?? 0.42;
+    const maxAge = opts?.maxAge ?? 0.28;
+    const color = opts?.color ?? 0xfff1a8;
+    const pos = new THREE.Vector3();
+    const w = this.wrapSimXZNearCamera(at.x, at.z);
+    surfacePointFromWorldXZ("sphere", w.x, at.y + 0.45, w.z, pos);
+    const geo = new THREE.SphereGeometry(radius, 10, 10);
+    const mat = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.88,
+      depthWrite: false
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 5;
+    mesh.position.copy(pos);
+    this.moonSpinRoot.add(mesh);
+    this.impactBursts.push({ mesh, age: 0, maxAge, baseScale: 1 });
+  }
+
   updateCamera(deltaSeconds: number): void {
     this.renderTimeSec += deltaSeconds;
     this.pruneExpiredResourceFieldFlashes();
     this.updateCameraInput(deltaSeconds);
     this.updateProjectileTraces(deltaSeconds);
+    this.updateImpactBursts(deltaSeconds);
   }
 
   /** Pluggable feedback: pulse a mineral/energy node (used by `dispatchUiFeedback`). */
@@ -1407,6 +1459,24 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
         p.mesh.geometry.dispose();
         mat.dispose();
         this.rangedProjectiles.splice(i, 1);
+      }
+    }
+  }
+
+  private updateImpactBursts(deltaSeconds: number): void {
+    for (let i = this.impactBursts.length - 1; i >= 0; i -= 1) {
+      const p = this.impactBursts[i]!;
+      p.age += deltaSeconds;
+      const u = Math.min(1, p.age / p.maxAge);
+      const mat = p.mesh.material as THREE.MeshBasicMaterial;
+      const s = p.baseScale * (0.65 + u * 1.55);
+      p.mesh.scale.setScalar(s);
+      mat.opacity = Math.max(0, 0.88 * (1 - u));
+      if (p.age >= p.maxAge) {
+        this.moonSpinRoot.remove(p.mesh);
+        p.mesh.geometry.dispose();
+        mat.dispose();
+        this.impactBursts.splice(i, 1);
       }
     }
   }
@@ -1820,9 +1890,7 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
         if (ev.ctrlKey || ev.metaKey) {
           ev.preventDefault();
           if (!ev.repeat) {
-            const sel = this.lastSyncedState?.selections[localPlayerId] ?? [];
-            const structSel = this.lastSyncedState?.structureSelections[localPlayerId] ?? [];
-            this.controlGroups[g] = { unitIds: [...sel], structureIds: [...structSel] };
+            this.assignControlGroup(g);
           }
           return;
         }
@@ -2937,7 +3005,8 @@ diffuseColor.rgb *= mix(1.0, 0.08, sphereFog);`
         submitCommand(
           createGameCommand(localPlayerId, "move_units", {
             target: { x: c.x, y: c.y, z: c.z },
-            formation: tuning.formation.active
+            formation: tuning.formation.active,
+            constructionStructureId: assistSt.id
           })
         );
         return;

@@ -139,4 +139,42 @@ describe("SimulationEngine unit attack range", () => {
     expect(result.state.structures.find((s) => s.id === target.id)?.hp).toBeLessThan(target.hp);
     expect(result.state.units.find((u) => u.id === attacker.id)?.position).toEqual(beforePos);
   });
+
+  it("chases structure combat targets toward the nearest footprint edge instead of the center", () => {
+    const state = combatState();
+    const attacker = makeSimUnit("p1", "blue", "P", { x: 0, y: 0.55, z: 0 });
+    attacker.speed = 12;
+    const target = makeStructure("p2", "red", "home", 12, 12, 4, 4, 500);
+    const center = structureCenter(target);
+    let attackerPos: { x: number; z: number } | null = null;
+
+    for (let x = -58; x <= 58 && !attackerPos; x += 0.25) {
+      for (let z = -58; z <= 58; z += 0.25) {
+        const edge = closestXZPointOnFootprintEdgesWrapped(x, z, target.gx, target.gz, target.footW, target.footD);
+        const edgeDistance = sphereGeodesicDistanceWorldXZ(x, z, edge.x, edge.z);
+        if (
+          Math.abs(edge.z - z) < 0.03 &&
+          Math.abs(center.z - z) > 1.2 &&
+          edgeDistance > attacker.attackRange + 1.2 &&
+          edgeDistance < attacker.attackRange + 2.8
+        ) {
+          attackerPos = { x, z };
+          break;
+        }
+      }
+    }
+
+    expect(attackerPos).not.toBeNull();
+    attacker.position.x = attackerPos!.x;
+    attacker.position.z = attackerPos!.z;
+    const beforeZ = attacker.position.z;
+    attacker.attackStructureTargetId = target.id;
+    state.units = [attacker];
+    state.structures = [target];
+
+    const result = new SimulationEngine().step(state, 0.12);
+    const moved = result.state.units.find((u) => u.id === attacker.id)!;
+
+    expect(Math.abs(moved.position.z - beforeZ)).toBeLessThan(0.08);
+  });
 });

@@ -53,6 +53,7 @@ import {
   isNeutralWorkerAdvancingConstruction,
   isNeutralWorkerContributingToConstruction,
   moveDestinationIsUnfinishedFriendlyStructure,
+  moveTargetIsNearStructureFootprint,
   neutralMinerInConstructionAssistRange,
   neutralMinerArrivedToAssistConstruction,
   tryApplyNeutralMinerResumeGather
@@ -129,16 +130,16 @@ function asGridCoord(v: unknown): number | null {
   return r;
 }
 
-function hostilePosition(h: HostileTarget): Vec3 {
-  return h.kind === "unit" ? h.u.position : structureCenter(h.s);
-}
-
 function isActiveMineralHauler(u: SimUnit): boolean {
   return u.kind === "N" && u.carriedMinerals > 0 && u.depositStructureTargetId !== null;
 }
 
 function isNeutralMineralPathing(u: SimUnit): boolean {
   return u.kind === "N" && (u.gatherTargetFieldId !== null || u.depositStructureTargetId !== null);
+}
+
+function hasActiveCombatIntent(u: SimUnit): boolean {
+  return u.attackTargetId !== null || u.attackStructureTargetId !== null || u.attackMoveTarget !== null;
 }
 
 export class SimulationEngine {
@@ -856,14 +857,22 @@ export class SimulationEngine {
       u.depositStructureTargetId = null;
       this.clearPendingStructurePlacement(u);
       this.clearBuildJob(u);
-      if (!attackMove && u.kind === "N" && constructionStructureId) {
-        const site = state.structures.find(
-          (s) =>
-            s.id === constructionStructureId &&
-            s.playerId === playerId &&
-            s.hp > 0 &&
-            s.buildRemainingSec > 0
-        );
+      if (!attackMove && u.kind === "N") {
+        const site = constructionStructureId
+          ? state.structures.find(
+              (s) =>
+                s.id === constructionStructureId &&
+                s.playerId === playerId &&
+                s.hp > 0 &&
+                s.buildRemainingSec > 0
+            )
+          : state.structures.find(
+              (s) =>
+                s.playerId === playerId &&
+                s.hp > 0 &&
+                s.buildRemainingSec > 0 &&
+                moveTargetIsNearStructureFootprint(dest, s, state)
+            );
         if (site) {
           u.buildStructureTargetId = site.id;
         }
@@ -1095,7 +1104,7 @@ export class SimulationEngine {
 
       let focus = this.resolveFocusTarget(unit, state, deadIds);
       if (focus) {
-        let pos = hostilePosition(focus);
+        let pos = this.attackApproachPosition(unit, focus);
         let distance = this.attackDistanceUnitToFocus(unit, focus, state);
 
         if (unit.attackClass === "melee" && focus.kind === "unit" && unit.attackTargetId && distance > unit.attackRange) {
@@ -1117,7 +1126,7 @@ export class SimulationEngine {
               const f2 = this.resolveFocusTarget(unit, state, deadIds);
               if (f2) {
                 focus = f2;
-                pos = hostilePosition(focus);
+                pos = this.attackApproachPosition(unit, focus);
                 distance = this.attackDistanceUnitToFocus(unit, f2, state);
               }
             }
@@ -1171,7 +1180,7 @@ export class SimulationEngine {
       if (shouldAutoAcquire) {
         const nearest = this.findNearestHostileWithinDistance(unit, state, deadIds, unit.visionRange);
         if (nearest) {
-          const pos = hostilePosition(nearest);
+          const pos = this.attackApproachPosition(unit, nearest);
           const distance = this.attackDistanceUnitToFocus(unit, nearest, state);
           if (distance <= unit.attackRange) {
             if (unit.cooldownRemainingSeconds <= 0) {
@@ -1322,6 +1331,23 @@ export class SimulationEngine {
     return Math.sqrt(xz * xz + dy * dy);
   }
 
+  private attackApproachPosition(unit: SimUnit, focus: HostileTarget): Vec3 {
+    if (focus.kind === "unit") {
+      return focus.u.position;
+    }
+    const s = focus.s;
+    const c = structureCenter(s);
+    const edge = closestXZPointOnFootprintEdgesWrapped(
+      unit.position.x,
+      unit.position.z,
+      s.gx,
+      s.gz,
+      s.footW,
+      s.footD
+    );
+    return { x: edge.x, y: c.y, z: edge.z };
+  }
+
   private resolveFocusTarget(
     unit: SimUnit,
     state: GameState,
@@ -1411,7 +1437,7 @@ export class SimulationEngine {
 
     for (const s of state.structures) {
       if (s.hp <= 0 || s.team === unit.team) continue;
-      const d = sphericalDistance3(unit.position, structureCenter(s));
+      const d = this.attackDistanceUnitToFocus(unit, { kind: "structure", s }, state);
       if (d > maxDistance) continue;
       if (d < bestDist) {
         bestDist = d;
@@ -1544,14 +1570,18 @@ export class SimulationEngine {
           const b = units[j];
           if (b.hp <= 0) continue;
           if (isActiveMineralHauler(a) || isActiveMineralHauler(b)) continue;
+          // Combat against buildings uses footprint-edge chase. Do not let unit overlap ejection fight that
+          // stable standoff point, or ranged/melee blobs jitter at the edge of large structures.
+          if (a.attackStructureTargetId || b.attackStructureTargetId) continue;
           const dx = b.position.x - a.position.x;
           const dz = b.position.z - a.position.z;
           const dist = Math.hypot(dx, dz);
           const neutralPair = a.kind === "N" && b.kind === "N";
           const workerPair = neutralPair || a.kind === "N" || b.kind === "N";
-          const minD = neutralPair ? 0.72 : workerPair ? 1.05 : defaultMinD;
+          const combatPair = hasActiveCombatIntent(a) || hasActiveCombatIntent(b);
+          const minD = combatPair ? Math.min(defaultMinD, 0.78) : neutralPair ? 0.72 : workerPair ? 1.05 : defaultMinD;
           if (dist >= minD) continue;
-          const overlap = (minD - dist) * (neutralPair ? push * 0.42 : push);
+          const overlap = (minD - dist) * (combatPair ? push * 0.12 : neutralPair ? push * 0.42 : push);
           const exactOverlap = dist < 1e-5;
           const seed = exactOverlap ? i * 92821 + j * 68917 + p * 193 : 0;
           const angle = exactOverlap ? seed : 0;
@@ -1591,7 +1621,13 @@ export class SimulationEngine {
       if (unit.hp <= 0) continue;
       // Active orders should never be cancelled by footprint ejection jitter; pathing may clip if needed.
       // Economy-owned gather/deposit motion does not set `moveTarget`, but it is still active pathing.
-      if (unit.moveTarget || unit.attackMoveTarget || isNeutralMineralPathing(unit)) continue;
+      if (
+        unit.moveTarget ||
+        unit.attackMoveTarget ||
+        unit.attackTargetId ||
+        unit.attackStructureTargetId ||
+        isNeutralMineralPathing(unit)
+      ) continue;
       if (unit.kind === "N" && isNeutralWorkerAdvancingConstruction(state, unit)) continue;
       let { x: px, z: pz } = unit.position;
       // Multi-pass ejection prevents units from remaining embedded when pushed into adjacent footprints.

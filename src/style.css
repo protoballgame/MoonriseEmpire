@@ -2045,6 +2045,16 @@ body {
   filter: brightness(1.12);
 }
 
+.control-group-chip--assignable:not(.control-group-chip--filled) {
+  border-color: rgba(255, 198, 102, 0.32);
+  color: rgba(255, 230, 180, 0.82);
+}
+
+.control-group-chip--assignable:not(.control-group-chip--filled) .control-group-chip-count {
+  background: linear-gradient(180deg, #2f2105 0%, #3d2a09 100%);
+  color: #ffd47a;
+}
+
 .control-group-chip--active {
   border-color: rgba(0, 229, 255, 0.68);
   box-shadow:

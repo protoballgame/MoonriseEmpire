@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defensiveStructureStats } from "../structureStats";
+import { defensiveStructureStats, structureVisionRange } from "../structureStats";
 import {
   createEmptyGameState,
   makeSimUnit,
@@ -29,6 +29,22 @@ function structureDefenseState(): GameState {
 }
 
 describe("SimulationEngine structure defense", () => {
+  it("increases Command Core view distance without increasing firing range", () => {
+    const stats = defensiveStructureStats("home")!;
+
+    expect(structureVisionRange("home")).toBeCloseTo(11 * 1.38);
+    expect(stats.acquireRange).toBeCloseTo(structureVisionRange("home"));
+    expect(stats.fireRange).toBeCloseTo(4 / Math.sqrt((1 + Math.sqrt(5)) / 2));
+  });
+
+  it("keeps Defense Turret view and firing range unchanged", () => {
+    const stats = defensiveStructureStats("defense_obelisk")!;
+
+    expect(structureVisionRange("defense_obelisk")).toBeCloseTo(10 * 2.2);
+    expect(stats.acquireRange).toBeCloseTo(structureVisionRange("defense_obelisk"));
+    expect(stats.fireRange).toBeCloseTo(10 * 2.2 * 0.9);
+  });
+
   it("limits Defense Turret firing to visible spherical line of sight", () => {
     const state = structureDefenseState();
     const turret = makeStructure("p1", "blue", "defense_obelisk", 12, 12, 1, 1, 100);

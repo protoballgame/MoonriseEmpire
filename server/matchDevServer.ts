@@ -1,5 +1,5 @@
 /**
- * Development/jam authoritative PvP host: private 1v1 rooms, 20 Hz tick, WebSocket fan-out.
+ * Development/jam authoritative PvP host: private 1v1 rooms, 30 Hz tick, WebSocket fan-out.
  * Browser clients (Phase 2): open the game with `?match=pvp` + `?matchWs=` (or dev default `ws://<host>:8788`).
  *
  * Run: `npm run match:dev`
@@ -15,9 +15,10 @@ import type { ClientMatchSetup } from "../src/core/match/clientMatch";
 import { PLAYER_HUMAN, PLAYER_OPPONENT, type GameState } from "../src/core/state/GameState";
 
 const PORT = Number(process.env.PORT || process.env.MATCH_DEV_PORT || 8788);
-const TICK_HZ = 20;
+const TICK_HZ = 30;
 const DEFAULT_ROOM_ID = "default";
 const ROOM_IDLE_TTL_MS = 15 * 60_000;
+const MAX_SOCKET_BACKPRESSURE_BYTES = 1_000_000;
 
 const pvpSetup: ClientMatchSetup = {
   localPlayerId: PLAYER_HUMAN,
@@ -46,8 +47,10 @@ function normalizeRoomId(raw: unknown): string {
 function createRoom(id: string): MatchRoom {
   const session = createGameSession("real_time", pvpSetup);
   let state = session.initialState;
-  const w = session.mode.update(state, 1 / state.tickRateHz);
+  state.tickRateHz = TICK_HZ;
+  const w = session.mode.update(state, 1 / TICK_HZ);
   state = w.state;
+  state.tickRateHz = TICK_HZ;
   return {
     id,
     session,
@@ -133,16 +136,48 @@ function seatIsOccupied(room: MatchRoom, seat: SeatId, requester: WebSocket): bo
   return false;
 }
 
-function broadcast(room: MatchRoom, obj: unknown): void {
-  const raw = JSON.stringify(obj);
-  for (const [ws, meta] of room.sockets) {
-    if (ws.readyState === ws.OPEN && meta.hello) ws.send(raw);
+function sendJson(ws: WebSocket, obj: unknown): boolean {
+  if (ws.readyState !== ws.OPEN) return false;
+  if (ws.bufferedAmount > MAX_SOCKET_BACKPRESSURE_BYTES) return false;
+  try {
+    ws.send(JSON.stringify(obj));
+    return true;
+  } catch (err) {
+    console.error("[match:dev] ws send failed:", err);
+    try {
+      ws.terminate();
+    } catch {
+      // Already gone.
+    }
+    return false;
   }
 }
 
+function broadcastRaw(room: MatchRoom, raw: string): void {
+  for (const [ws, meta] of room.sockets) {
+    if (!meta.hello || ws.readyState !== ws.OPEN) continue;
+    if (ws.bufferedAmount > MAX_SOCKET_BACKPRESSURE_BYTES) continue;
+    try {
+      ws.send(raw);
+    } catch (err) {
+      console.error("[match:dev] broadcast send failed:", err);
+      try {
+        ws.terminate();
+      } catch {
+        // Already gone.
+      }
+    }
+  }
+}
+
+function broadcast(room: MatchRoom, obj: unknown): void {
+  broadcastRaw(room, JSON.stringify(obj));
+}
+
 function serializeGameState(s: GameState): unknown {
+  const wire: GameState = { ...s, playerExploration: {} };
   return JSON.parse(
-    JSON.stringify(s, (_k, v) => (v instanceof Uint8Array ? { __uint8: Array.from(v) } : v))
+    JSON.stringify(wire, (_k, v) => (v instanceof Uint8Array ? { __uint8: Array.from(v) } : v))
   );
 }
 
@@ -211,7 +246,7 @@ wss.on("connection", (ws) => {
     try {
       msg = JSON.parse(String(data));
     } catch {
-      ws.send(JSON.stringify({ type: "error", reason: "invalid_json" }));
+        sendJson(ws, { type: "error", reason: "invalid_json" });
       return;
     }
     if (!msg || typeof msg !== "object") return;
@@ -225,14 +260,15 @@ wss.on("connection", (ws) => {
       const meta = room.sockets.get(ws)!;
       const requestedSeat = m.seat === PLAYER_OPPONENT || m.seat === "p2" ? PLAYER_OPPONENT : PLAYER_HUMAN;
       if (seatIsOccupied(room, requestedSeat, ws)) {
-        ws.send(JSON.stringify({ type: "error", reason: `seat_occupied_${requestedSeat}` }));
+        sendJson(ws, { type: "error", reason: `seat_occupied_${requestedSeat}` });
         ws.close(1008, "seat occupied");
         return;
       }
       meta.seat = requestedSeat;
       meta.hello = true;
-      ws.send(
-        JSON.stringify({
+      sendJson(
+        ws,
+        {
           type: "hello_ok",
           seat: meta.seat,
           ...roomStatusPayload(room),
@@ -242,7 +278,7 @@ wss.on("connection", (ws) => {
           state: serializeGameState(room.state),
           events: [],
           feedback: []
-        })
+        }
       );
       broadcast(room, {
         type: "room_status",
@@ -255,16 +291,16 @@ wss.on("connection", (ws) => {
     const room = socketRoom.get(ws);
     const meta = room?.sockets.get(ws);
     if (m.type === "list_rooms") {
-      ws.send(JSON.stringify({ type: "rooms", ...openRoomsPayload() }));
+      sendJson(ws, { type: "rooms", ...openRoomsPayload() });
       return;
     }
     if (!room || !meta) {
-      ws.send(JSON.stringify({ type: "error", reason: "send_hello_first" }));
+      sendJson(ws, { type: "error", reason: "send_hello_first" });
       return;
     }
 
     if (!meta.hello) {
-      ws.send(JSON.stringify({ type: "error", reason: "send_hello_first" }));
+      sendJson(ws, { type: "error", reason: "send_hello_first" });
       return;
     }
     room.lastActiveMs = Date.now();
@@ -272,7 +308,7 @@ wss.on("connection", (ws) => {
     if (m.type === "game_command") {
       const ct = m.commandType;
       if (typeof ct !== "string" || !COMMAND_TYPES.has(ct)) {
-        ws.send(JSON.stringify({ type: "error", reason: "bad_command_type" }));
+        sendJson(ws, { type: "error", reason: "bad_command_type" });
         return;
       }
       const payload =
@@ -286,10 +322,14 @@ wss.on("connection", (ws) => {
     }
 
     if (m.type === "ping") {
-      ws.send(JSON.stringify({ type: "pong", room: room.id, tick: room.state.tick }));
+      sendJson(ws, { type: "pong", room: room.id, tick: room.state.tick });
       return;
     }
 
+  });
+
+  ws.on("error", (err) => {
+    console.error("[match:dev] socket error:", err.message);
   });
 
   ws.on("close", () => {
@@ -327,9 +367,10 @@ setInterval(() => {
         });
         continue;
       }
-      const tickHz = room.state.tickRateHz > 0 ? room.state.tickRateHz : TICK_HZ;
-      const result = room.session.mode.update(room.state, 1 / tickHz);
+      room.state.tickRateHz = TICK_HZ;
+      const result = room.session.mode.update(room.state, 1 / TICK_HZ);
       room.state = result.state;
+      room.state.tickRateHz = TICK_HZ;
       broadcast(room, {
         type: "tick",
         ...roomStatusPayload(room),

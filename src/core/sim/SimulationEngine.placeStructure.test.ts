@@ -89,4 +89,34 @@ describe("SimulationEngine place_structure", () => {
     expect(nextBuilder.resumeGatherFieldId).toBeNull();
     expect(nextBuilder.carriedMinerals).toBe(3);
   });
+
+  it("reassigns a Neutral to finish an interrupted building when moved back near the site", () => {
+    const state = createEmptyGameState("real_time");
+    state.players = [
+      {
+        id: PLAYER_HUMAN,
+        civ: "khemetic",
+        resources: { biomass: 0, minerals: 0, energy: 0, obsidian: 0, nexus: 0 }
+      }
+    ];
+    const site = makeStructure(PLAYER_HUMAN, "blue", "power_spire", 10, 10, 1, 1, 100, 5, 5);
+    const center = structureCenter(site);
+    const builder = makeSimUnit(PLAYER_HUMAN, "blue", "N", center);
+    state.structures = [site];
+    state.units = [builder];
+    state.selections[PLAYER_HUMAN] = [builder.id];
+
+    const engine = new SimulationEngine();
+    engine.enqueue(
+      createGameCommand(PLAYER_HUMAN, "move_units", {
+        target: { x: center.x, y: center.y, z: center.z }
+      })
+    );
+
+    const next = engine.step(state, 1).state;
+    const nextBuilder = next.units[0]!;
+
+    expect(nextBuilder.buildStructureTargetId).toBe(site.id);
+    expect(next.structures[0]!.buildRemainingSec).toBeLessThan(site.buildRemainingSec);
+  });
 });

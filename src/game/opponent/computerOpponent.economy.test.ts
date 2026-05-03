@@ -58,6 +58,10 @@ describe("CPU economy / build rush", () => {
     }
   }
 
+  function isBarracksKind(kind: string | null): kind is "barracks_r" | "barracks_s" | "barracks_p" {
+    return kind === "barracks_r" || kind === "barracks_s" || kind === "barracks_p";
+  }
+
   it("rush builds toward the second Solar Array while on one starter array", () => {
     const s = pvcState();
     expect(cpuNextStructureKindForTesting(s, PLAYER_OPPONENT)).toBe("power_spire");
@@ -86,6 +90,81 @@ describe("CPU economy / build rush", () => {
     expect(kind === "barracks_r" || kind === "barracks_s" || kind === "barracks_p").toBe(true);
   });
 
+  it("prioritizes a second barracks type even if duplicate barracks already exist", () => {
+    const s = pvcState();
+    duplicateOpponentSolar(s);
+    duplicateOpponentSolar(s);
+    addOpponentMiners(s, 6);
+    const firstKind = cpuNextStructureKindForTesting(s, PLAYER_OPPONENT);
+    if (!isBarracksKind(firstKind)) {
+      throw new Error(`Expected opening barracks, got ${String(firstKind)}`);
+    }
+
+    const home = s.structures.find((st) => st.playerId === PLAYER_OPPONENT && st.kind === "home")!;
+    const team = playerTeamForPlayerId(PLAYER_OPPONENT);
+    s.structures.push(
+      makeStructure(PLAYER_OPPONENT, team, firstKind, home.gx + 5, home.gz + 5, 2, 2, 100),
+      makeStructure(PLAYER_OPPONENT, team, firstKind, home.gx + 8, home.gz + 5, 2, 2, 100)
+    );
+
+    const nextKind = cpuNextStructureKindForTesting(s, PLAYER_OPPONENT);
+    expect(isBarracksKind(nextKind)).toBe(true);
+    expect(nextKind).not.toBe(firstKind);
+  });
+
+  it("pauses soldier production at the five-soldier wave until a second barracks type is placed", () => {
+    const s = pvcState();
+    duplicateOpponentSolar(s);
+    duplicateOpponentSolar(s);
+    addOpponentMiners(s, 6);
+    const firstKind = cpuNextStructureKindForTesting(s, PLAYER_OPPONENT);
+    if (!isBarracksKind(firstKind)) {
+      throw new Error(`Expected opening barracks, got ${String(firstKind)}`);
+    }
+
+    const home = s.structures.find((st) => st.playerId === PLAYER_OPPONENT && st.kind === "home")!;
+    const team = playerTeamForPlayerId(PLAYER_OPPONENT);
+    s.structures.push(makeStructure(PLAYER_OPPONENT, team, firstKind, home.gx + 5, home.gz + 5, 2, 2, 100));
+    addOpponentMilitary(s, ["R", "R", "R", "R", "R"]);
+    const pl = s.players.find((p) => p.id === PLAYER_OPPONENT)!;
+    pl.resources.energy = 999;
+    pl.resources.minerals = 999;
+
+    const commands: { type: string; payload?: Record<string, unknown> }[] = [];
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+
+    const nextKind = cpuNextStructureKindForTesting(s, PLAYER_OPPONENT);
+    expect(isBarracksKind(nextKind)).toBe(true);
+    expect(nextKind).not.toBe(firstKind);
+
+    commands.length = 0;
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 1 / 60);
+    expect(commands.some((cmd) => cmd.type === "queue_structure_train")).toBe(false);
+  });
+
+  it("does not schedule the random post-rush solar before the second barracks type", () => {
+    const s = pvcState();
+    duplicateOpponentSolar(s);
+    duplicateOpponentSolar(s);
+    addOpponentMiners(s, 6);
+    const firstKind = cpuNextStructureKindForTesting(s, PLAYER_OPPONENT);
+    if (!isBarracksKind(firstKind)) {
+      throw new Error(`Expected opening barracks, got ${String(firstKind)}`);
+    }
+
+    const home = s.structures.find((st) => st.playerId === PLAYER_OPPONENT && st.kind === "home")!;
+    const team = playerTeamForPlayerId(PLAYER_OPPONENT);
+    s.structures.push(makeStructure(PLAYER_OPPONENT, team, firstKind, home.gx + 5, home.gz + 5, 2, 2, 100));
+
+    tickComputerOpponent(s, () => undefined, PLAYER_OPPONENT, 240);
+
+    const nextKind = cpuNextStructureKindForTesting(s, PLAYER_OPPONENT);
+    expect(isBarracksKind(nextKind)).toBe(true);
+    expect(nextKind).not.toBe(firstKind);
+  });
+
   it("does not queue extra miners while waiting for the first barracks", () => {
     const s = pvcState();
     duplicateOpponentSolar(s);
@@ -101,46 +180,53 @@ describe("CPU economy / build rush", () => {
     expect(commands.some((cmd) => cmd.type === "queue_structure_train")).toBe(false);
   });
 
-  it("waits for three idle soldiers before sending a raid", () => {
+  it("sends the opening CPU attack as a one-soldier probe", () => {
     const s = pvcState();
-    addOpponentMilitary(s, ["R", "S"]);
+    addOpponentMilitary(s, ["R"]);
     const commands: { type: string; payload?: Record<string, unknown> }[] = [];
 
     tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 13);
 
-    expect(commands.some((cmd) => cmd.type === "attack_move_units")).toBe(false);
-  });
-
-  it("sends the first CPU attack as a three-soldier wave", () => {
-    const s = pvcState();
-    addOpponentMilitary(s, ["R", "S", "P"]);
-    const commands: { type: string; payload?: Record<string, unknown> }[] = [];
-
-    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
-
     const attackMove = commands.find((cmd) => cmd.type === "attack_move_units");
-    expect(attackMove).toBeDefined();
-    expect(attackMove?.payload?.["unitIds"]).toHaveLength(3);
+    expect(attackMove?.payload?.["unitIds"]).toHaveLength(1);
   });
 
-  it("escalates after the first CPU attack instead of repeating three-soldier raids", () => {
+  it("ramps CPU attack waves through the Fibonacci pattern", () => {
     const s = pvcState();
-    addOpponentMilitary(s, ["R", "S", "P"]);
+    addOpponentMilitary(s, ["R", "S", "P", "R", "S", "P", "R", "S"]);
     const commands: { type: string; payload?: Record<string, unknown> }[] = [];
 
     tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
-    expect(commands.find((cmd) => cmd.type === "attack_move_units")?.payload?.["unitIds"]).toHaveLength(3);
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+
+    const waveSizes = commands
+      .filter((cmd) => cmd.type === "attack_move_units")
+      .map((cmd) => (cmd.payload?.["unitIds"] as string[]).length);
+    expect(waveSizes).toEqual([1, 2, 3, 5]);
+  });
+
+  it("waits for enough idle soldiers before sending the next Fibonacci wave", () => {
+    const s = pvcState();
+    addOpponentMilitary(s, ["R"]);
+    const commands: { type: string; payload?: Record<string, unknown> }[] = [];
+
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+    expect(commands.find((cmd) => cmd.type === "attack_move_units")?.payload?.["unitIds"]).toHaveLength(1);
 
     commands.length = 0;
     tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
     expect(commands.some((cmd) => cmd.type === "attack_move_units")).toBe(false);
   });
 
-  it("requires a mixed larger follow-up wave and attacks tech or economy after opening", () => {
+  it("requires mixed unit types once Fibonacci waves reach five soldiers", () => {
     const s = pvcState();
-    addOpponentMilitary(s, ["R", "R", "R", "R", "R", "R"]);
+    addOpponentMilitary(s, ["R", "R", "R", "R", "R"]);
     const commands: { type: string; payload?: Record<string, unknown> }[] = [];
 
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
+    tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
     tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
     commands.length = 0;
     tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
@@ -150,7 +236,7 @@ describe("CPU economy / build rush", () => {
     tickComputerOpponent(s, (cmd) => commands.push({ type: cmd.type, payload: cmd.payload }), PLAYER_OPPONENT, 9);
 
     const attackMove = commands.find((cmd) => cmd.type === "attack_move_units");
-    expect(attackMove?.payload?.["unitIds"]).toHaveLength(7);
+    expect(attackMove?.payload?.["unitIds"]).toHaveLength(5);
     const target = attackMove?.payload?.["target"] as { x: number; z: number };
     const humanHome = s.structures.find((st) => st.playerId === "p1" && st.kind === "home")!;
     const homeCenter = structureCenter(humanHome);

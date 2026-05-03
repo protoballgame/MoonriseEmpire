@@ -15,6 +15,10 @@ function collisionState(): GameState {
   return state;
 }
 
+function distanceXZ(a: { position: { x: number; z: number } }, b: { position: { x: number; z: number } }): number {
+  return Math.hypot(a.position.x - b.position.x, a.position.z - b.position.z);
+}
+
 describe("SimulationEngine unit collision", () => {
   it("still spreads idle Neutral units apart", () => {
     const state = collisionState();
@@ -23,7 +27,7 @@ describe("SimulationEngine unit collision", () => {
     state.units = [a, b];
 
     const next = new SimulationEngine().step(state, 0).state;
-    const d = Math.hypot(next.units[0]!.position.x - next.units[1]!.position.x, next.units[0]!.position.z - next.units[1]!.position.z);
+    const d = distanceXZ(next.units[0]!, next.units[1]!);
 
     expect(d).toBeGreaterThan(0.05);
   });
@@ -37,7 +41,7 @@ describe("SimulationEngine unit collision", () => {
     state.units = [hauler, blocker];
 
     const next = new SimulationEngine().step(state, 0).state;
-    const d = Math.hypot(next.units[0]!.position.x - next.units[1]!.position.x, next.units[0]!.position.z - next.units[1]!.position.z);
+    const d = distanceXZ(next.units[0]!, next.units[1]!);
 
     expect(d).toBeLessThanOrEqual(0.051);
   });
@@ -57,5 +61,33 @@ describe("SimulationEngine unit collision", () => {
     const movedByCleanup = Math.hypot(next.units[0]!.position.x - start.x, next.units[0]!.position.z - start.z);
 
     expect(movedByCleanup).toBeLessThan(0.001);
+  });
+
+  it("does not shove units away from their building combat standoff", () => {
+    const state = collisionState();
+    const enemy = makeStructure("p2", "red", "home", 28, 20, 4, 4, 500);
+    state.structures.push(enemy);
+    const a = makeSimUnit("p1", "blue", "P", { x: 8, y: 0.55, z: 0 });
+    const b = makeSimUnit("p1", "blue", "P", { x: 8.03, y: 0.55, z: 0 });
+    a.attackStructureTargetId = enemy.id;
+    b.attackStructureTargetId = enemy.id;
+    state.units = [a, b];
+
+    const next = new SimulationEngine().step(state, 0).state;
+
+    expect(distanceXZ(next.units[0]!, next.units[1]!)).toBeLessThan(0.051);
+  });
+
+  it("dampens overlap shove for active unit combat", () => {
+    const state = collisionState();
+    const a = makeSimUnit("p1", "blue", "R", { x: -4, y: 0.55, z: 0 });
+    const b = makeSimUnit("p2", "red", "S", { x: -4.05, y: 0.55, z: 0 });
+    a.attackTargetId = b.id;
+    b.attackTargetId = a.id;
+    state.units = [a, b];
+
+    const next = new SimulationEngine().step(state, 0).state;
+
+    expect(distanceXZ(next.units[0]!, next.units[1]!)).toBeLessThan(0.4);
   });
 });

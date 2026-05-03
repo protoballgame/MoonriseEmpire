@@ -49,5 +49,7 @@ function reviveUint8Deep(value: unknown): unknown {
 
 /** Rehydrates wire JSON from `match:dev` (Uint8Array as `{ __uint8: number[] }`) into a real `GameState`. */
 export function reviveGameStateFromNetwork(wire: unknown): GameState {
-  return reviveUint8Deep(wire) as GameState;
+  const state = reviveUint8Deep(wire) as GameState;
+  state.playerExploration ??= {};
+  return state;
 }

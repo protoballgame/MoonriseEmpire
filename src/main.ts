@@ -173,7 +173,7 @@ function createHUD(): HTMLDivElement {
       <button type="button" class="hud-build-slot" id="hudBuildPowerSpire" title="Solar tile (1×1) — small passive energy; stack several for real output (${POWER_SPIRE_PLACE_COST_ENERGY} En + ${POWER_SPIRE_PLACE_COST_MINERALS} Min). Select N first.">
         <span class="hud-build-hotkey">E</span><span class="hud-build-name">Solar</span><span class="hud-build-cost">${POWER_SPIRE_PLACE_COST_ENERGY} / ${POWER_SPIRE_PLACE_COST_MINERALS}</span>
       </button>
-      <button type="button" class="hud-build-slot" id="hudBuildDefenseObelisk" title="Defense Turret (1×1) — ranged tower with 2x Neutral vision, 1.62x Neutral damage, and 4x Neutral HP (${DEFENSE_OBELISK_PLACE_COST_ENERGY} En + ${DEFENSE_OBELISK_PLACE_COST_MINERALS} Min). Select N first.">
+      <button type="button" class="hud-build-slot" id="hudBuildDefenseObelisk" title="Defense Turret (1×1) — ranged tower with 2.2x Neutral vision, 90% vision fire range, 1.62x Neutral damage, and 4x Neutral HP (${DEFENSE_OBELISK_PLACE_COST_ENERGY} En + ${DEFENSE_OBELISK_PLACE_COST_MINERALS} Min). Select N first.">
         <span class="hud-build-hotkey">T</span><span class="hud-build-name">Turret</span><span class="hud-build-cost">${DEFENSE_OBELISK_PLACE_COST_ENERGY} / ${DEFENSE_OBELISK_PLACE_COST_MINERALS}</span>
       </button>
     </div>
@@ -593,6 +593,8 @@ function runGame(appEl: HTMLElement): void {
     );
     if (useAuthoritativeNet && netAuthority) {
       netAuthority.sendGameCommand(cmd.type, cmd.payload);
+      // Local prediction keeps PvP responsive between authoritative snapshots; server state still wins.
+      boot.session.mode.submitCommand(cmd);
     } else {
       boot.session.mode.submitCommand(cmd);
     }
@@ -677,7 +679,9 @@ function runGame(appEl: HTMLElement): void {
       url: pvpWsUrl,
       seat,
       room,
-      onCommandsReady: () => {},
+      onCommandsReady: () => {
+        netFatalError = null;
+      },
       onPush: (packet) => {
         netInbox.push({
           state: packet.state != null ? reviveGameStateFromNetwork(packet.state) : gameState,
@@ -1035,6 +1039,21 @@ function runGame(appEl: HTMLElement): void {
     for (const ev of events) {
       if (ev.type !== "damage_dealt") continue;
       hitFlashOverlay.spawn(ev.position.x, ev.position.y, ev.position.z);
+      const impactColor =
+        ev.attackClass === "melee"
+          ? 0xffd36a
+          : ev.attackerKind === "R"
+            ? 0xff8f66
+            : ev.attackerKind === "S"
+              ? 0xc8f0ff
+              : ev.attackerKind === "P"
+                ? 0xd6b7ff
+                : 0xfff1a8;
+      view.spawnImpactBurst(ev.position, {
+        color: impactColor,
+        radius: ev.attackClass === "melee" ? 0.5 : 0.36,
+        maxAge: ev.attackClass === "melee" ? 0.24 : 0.3
+      });
       if (ev.attackClass === "ranged") {
         const commandCoreBattery =
           typeof ev.attackerUnitId === "string" && ev.attackerUnitId.startsWith("home-defense:");
@@ -1061,20 +1080,26 @@ function runGame(appEl: HTMLElement): void {
 
   function refreshControlGroupDock(): void {
     const slots = view.getControlGroupsHudSlots();
-    const sig = slots.map(({ digit, count, active }) => `${digit}:${count}:${active ? 1 : 0}`).join("|");
+    const sig = slots
+      .map(({ digit, count, active, canAssign }) => `${digit}:${count}:${active ? 1 : 0}:${canAssign ? 1 : 0}`)
+      .join("|");
     if (sig === controlDockSignature) return;
     controlDockSignature = sig;
     controlDock.replaceChildren(
-      ...slots.map(({ digit, count, active }) => {
+      ...slots.map(({ digit, count, active, canAssign }) => {
         const el = document.createElement("button");
         el.type = "button";
         el.className = `control-group-chip${count > 0 ? " control-group-chip--filled" : ""}${
           active ? " control-group-chip--active" : ""
-        }`;
-        el.disabled = count === 0;
-        el.title = `Group ${digit} (${count} items) — Ctrl+${digit} save selection (units+structures), ${digit} recall`;
-        el.innerHTML = `<span class="control-group-chip-digit">${digit}</span><span class="control-group-chip-count">${count > 0 ? count : "—"}</span>`;
-        el.addEventListener("click", () => view.recallControlGroup(digit));
+        }${canAssign ? " control-group-chip--assignable" : ""}`;
+        el.disabled = count === 0 && !canAssign;
+        el.title = canAssign
+          ? `Group ${digit} — tap to save current selection`
+          : `Group ${digit} (${count} items) — tap to recall`;
+        el.innerHTML = `<span class="control-group-chip-digit">${digit}</span><span class="control-group-chip-count">${
+          count > 0 ? count : canAssign ? "+" : "—"
+        }</span>`;
+        el.addEventListener("click", () => view.assignOrRecallControlGroup(digit));
         return el;
       })
     );
@@ -1184,7 +1209,7 @@ function runGame(appEl: HTMLElement): void {
     const idleTick: SimulationTickResult = { state: gameState, events: [], feedback: [] };
     let tickResult: SimulationTickResult;
     if (matchLive && useAuthoritativeNet) {
-      tickResult = { state: gameState, events: [], feedback: [] };
+      tickResult = boot.session.mode.update(gameState, deltaSeconds);
     } else if (matchLive) {
       tickResult = boot.session.mode.update(gameState, deltaSeconds);
     } else {

@@ -34,8 +34,6 @@ let cpuAttackWavesSent = 0;
 
 const CONSTRUCTION_ASSIST_ASSIGN_INTERVAL_SEC = 0.22;
 const RAID_ATTACK_MOVE_INTERVAL_SEC = 5.2;
-const CPU_ATTACK_WAVE_MIN_IDLE_MILITARY = 3;
-const CPU_ATTACK_WAVE_ESCALATED_MIN_IDLE_MILITARY = 6;
 const SCOUT_MILITARY_INTERVAL_SEC = 12;
 /** If the human is this close to the Core (world XZ), do not strip miners off combat for “economy bubble”. */
 const CPU_HOME_THREAT_SUPPRESS_REVERT_RANGE = 38;
@@ -92,6 +90,10 @@ function favoredBarracksKind(): BarracksStructureKind {
   return "barracks_p";
 }
 
+function isBarracksKind(kind: string): kind is BarracksStructureKind {
+  return kind === "barracks_r" || kind === "barracks_s" || kind === "barracks_p";
+}
+
 function hasCpuStructure(state: GameState, computerPlayerId: string, kind: PlaceableStructureKind): boolean {
   return state.structures.some(
     (s) =>
@@ -106,8 +108,33 @@ function countCpuBarracksSites(state: GameState, computerPlayerId: string): numb
     (s) =>
       s.playerId === computerPlayerId &&
       s.hp > 0 &&
-      (s.kind === "barracks_r" || s.kind === "barracks_s" || s.kind === "barracks_p")
+      isBarracksKind(s.kind)
   ).length;
+}
+
+function countCpuBarracksTypes(state: GameState, computerPlayerId: string): number {
+  const kinds = new Set<BarracksStructureKind>();
+  for (const s of state.structures) {
+    if (s.playerId === computerPlayerId && s.hp > 0 && isBarracksKind(s.kind)) {
+      kinds.add(s.kind);
+    }
+  }
+  return kinds.size;
+}
+
+function nextMissingCpuBarracksKind(
+  state: GameState,
+  computerPlayerId: string,
+  includeFavored: boolean
+): BarracksStructureKind | null {
+  const fav = favoredBarracksKind();
+  const candidates = includeFavored ? [fav, ...cpuBarracksFillOrder] : cpuBarracksFillOrder.filter((k) => k !== fav);
+  for (const k of candidates) {
+    if (!hasCpuBarracksSiteOfKind(state, computerPlayerId, k)) {
+      return k;
+    }
+  }
+  return null;
 }
 
 function hasCpuBarracksSiteOfKind(
@@ -244,6 +271,7 @@ function initPostRushSolarSchedule(): void {
 
 function shouldOfferPostRushFibSolar(state: GameState, computerPlayerId: string): boolean {
   if (!rushEconomyComplete(state, computerPlayerId)) return false;
+  if (countCpuBarracksTypes(state, computerPlayerId) < 2) return false;
   if (countCpuSolarSites(state, computerPlayerId) >= CPU_SOFT_CAP_SOLAR) return false;
   return cpuEconomyClockSec >= cpuNextSolarEarliestSec;
 }
@@ -276,6 +304,7 @@ function nextCpuStructureKind(
   const miners = countCpuMiners(state, computerPlayerId);
   const rushDone = rushEconomyComplete(state, computerPlayerId);
   const barracksSites = countCpuBarracksSites(state, computerPlayerId);
+  const barracksTypes = countCpuBarracksTypes(state, computerPlayerId);
 
   if (!rushDone) {
     if (miners >= CPU_RUSH_TARGET_MINERS && solarCount >= CPU_RUSH_TARGET_SOLAR && barracksSites === 0) {
@@ -289,16 +318,12 @@ function nextCpuStructureKind(
 
   const fav = favoredBarracksKind();
 
-  if (barracksSites < 2) {
-    if (!hasCpuBarracksSiteOfKind(state, computerPlayerId, fav)) {
-      return fav;
-    }
-    for (const k of cpuBarracksFillOrder) {
-      if (!hasCpuBarracksSiteOfKind(state, computerPlayerId, k)) {
-        return k;
-      }
-    }
+  if (!hasCpuBarracksSiteOfKind(state, computerPlayerId, fav)) {
     return fav;
+  }
+
+  if (barracksTypes < 2) {
+    return nextMissingCpuBarracksKind(state, computerPlayerId, false) ?? fav;
   }
 
   if (shouldBuildDefenseTower(state, computerPlayerId)) {
@@ -309,12 +334,8 @@ function nextCpuStructureKind(
     return "power_spire";
   }
 
-  if (barracksSites < 3) {
-    for (const k of cpuBarracksFillOrder) {
-      if (!hasCpuBarracksSiteOfKind(state, computerPlayerId, k)) {
-        return k;
-      }
-    }
+  if (barracksTypes < 3 && barracksSites < 3) {
+    return nextMissingCpuBarracksKind(state, computerPlayerId, true);
   }
 
   if (shouldBuildDepot(state, computerPlayerId) && !hasCpuStructure(state, computerPlayerId, "mineral_depot")) {
@@ -396,15 +417,51 @@ function distinctRpsKinds(units: readonly SimUnit[]): number {
   return kinds.size;
 }
 
-function currentCpuAttackWaveMin(): number {
-  return cpuAttackWavesSent === 0
-    ? CPU_ATTACK_WAVE_MIN_IDLE_MILITARY
-    : CPU_ATTACK_WAVE_ESCALATED_MIN_IDLE_MILITARY;
+function cpuAttackWaveSizeForIndex(index: number): number {
+  if (index <= 0) return 1;
+  if (index === 1) return 2;
+  let a = 1;
+  let b = 2;
+  for (let i = 2; i <= index; i += 1) {
+    const c = a + b;
+    a = b;
+    b = c;
+  }
+  return b;
+}
+
+function currentCpuAttackWaveSize(): number {
+  return cpuAttackWaveSizeForIndex(cpuAttackWavesSent);
+}
+
+function cpuNeedsSecondBarracksForMixedWave(state: GameState, computerPlayerId: string): boolean {
+  return currentCpuAttackWaveSize() >= 5 && countCpuBarracksTypes(state, computerPlayerId) < 2;
 }
 
 function cpuWaveReady(units: readonly SimUnit[]): boolean {
-  if (units.length < currentCpuAttackWaveMin()) return false;
-  return cpuAttackWavesSent === 0 || distinctRpsKinds(units) >= 2;
+  const size = currentCpuAttackWaveSize();
+  if (units.length < size) return false;
+  return size < 5 || distinctRpsKinds(units) >= 2;
+}
+
+function pickCpuAttackWaveUnits(units: readonly SimUnit[]): SimUnit[] | null {
+  if (!cpuWaveReady(units)) return null;
+  const size = currentCpuAttackWaveSize();
+  if (size < 5) return units.slice(0, size);
+
+  const first = units[0]!;
+  const secondKind = units.find((u) => u.kind !== first.kind);
+  if (!secondKind) return null;
+
+  const selected = [first, secondKind];
+  const selectedIds = new Set(selected.map((u) => u.id));
+  for (const u of units) {
+    if (selected.length >= size) break;
+    if (selectedIds.has(u.id)) continue;
+    selected.push(u);
+    selectedIds.add(u.id);
+  }
+  return selected.length === size ? selected : null;
 }
 
 function cpuRaidTargetPriority(st: SimStructure): number {
@@ -461,6 +518,9 @@ function canQueueProduction(st: SimStructure): boolean {
 
 function militaryTrainStructuresByNeed(state: GameState, pid: string): SimStructure[] {
   if (countCpuMiners(state, pid) < effectiveArmyMinMiners(state, pid)) {
+    return [];
+  }
+  if (cpuNeedsSecondBarracksForMixedWave(state, pid)) {
     return [];
   }
 
@@ -573,10 +633,7 @@ function tryQueueMiner(
   const openingStructure = nextCpuStructureKind(state, computerPlayerId);
   if (
     openingStructure !== null &&
-    (openingStructure === "power_spire" ||
-      openingStructure === "barracks_r" ||
-      openingStructure === "barracks_s" ||
-      openingStructure === "barracks_p")
+    (openingStructure === "power_spire" || isBarracksKind(openingStructure))
   ) {
     const placeCost = resourcesForPlaceStructure(openingStructure);
     if (
@@ -951,8 +1008,9 @@ function tryComputerPlaceStructure(
   if (!kind) return;
   const barracksSites = countCpuBarracksSites(state, computerPlayerId);
   if (
-    (kind === "barracks_r" || kind === "barracks_s" || kind === "barracks_p") &&
+    isBarracksKind(kind) &&
     barracksSites > 0 &&
+    countCpuBarracksTypes(state, computerPlayerId) >= 2 &&
     trainRng() < 0.035
   ) {
     return;
@@ -1014,7 +1072,7 @@ function tryComputerPlaceStructure(
   if (!site) {
     site = findNearestValidStructurePlacementNearHome(state, computerPlayerId, kind);
   }
-  if (!site && (kind === "barracks_r" || kind === "barracks_s" || kind === "barracks_p")) {
+  if (!site && isBarracksKind(kind)) {
     const anchor = mineralExpansionAnchorWorld(state, computerPlayerId) ?? MAP_CONTEST_XZ;
     site = findNearestValidStructurePlacementTowardWorldPoint(
       state,
@@ -1087,7 +1145,8 @@ function tryComputerScoutMilitaryTowardMid(
   scoutMilitaryAccumSec += deltaSeconds;
   if (scoutMilitaryAccumSec < SCOUT_MILITARY_INTERVAL_SEC) return;
   const idle = pickCpuIdleMilitary(state, computerPlayerId);
-  if (!cpuWaveReady(idle)) return;
+  const wave = pickCpuAttackWaveUnits(idle);
+  if (!wave) return;
   let best = idle[0]!;
   let bestD = Math.hypot(best.position.x - MAP_CONTEST_XZ.x, best.position.z - MAP_CONTEST_XZ.z);
   for (const u of idle) {
@@ -1106,7 +1165,7 @@ function tryComputerScoutMilitaryTowardMid(
   submit(
     createGameCommand(computerPlayerId, "attack_move_units", {
       target: { x: MAP_CONTEST_XZ.x, y: 0.55, z: MAP_CONTEST_XZ.z },
-      unitIds: idle.map((u) => u.id),
+      unitIds: wave.map((u) => u.id),
       formation: tuning.formation.active
     })
   );
@@ -1128,7 +1187,8 @@ function tryComputerRaidAttackMove(
   if (!rival) return;
 
   const idleMilitary = pickCpuIdleMilitary(state, computerPlayerId);
-  if (!cpuWaveReady(idleMilitary)) return;
+  const wave = pickCpuAttackWaveUnits(idleMilitary);
+  if (!wave) return;
 
   const target = pickCpuRaidTarget(state, computerPlayerId, rival.id);
   if (!target) return;
@@ -1139,7 +1199,7 @@ function tryComputerRaidAttackMove(
   submit(
     createGameCommand(computerPlayerId, "attack_move_units", {
       target: { x: c.x, y: c.y, z: c.z },
-      unitIds: idleMilitary.map((u) => u.id),
+      unitIds: wave.map((u) => u.id),
       formation: tuning.formation.active
     })
   );
@@ -1156,7 +1216,11 @@ export function tickComputerOpponent(
 ): void {
   if (state.victorPlayerId !== null) return;
 
-  if (rushEconomyComplete(state, computerPlayerId) && !cpuPostRushSolarPacingArmed) {
+  if (
+    rushEconomyComplete(state, computerPlayerId) &&
+    countCpuBarracksTypes(state, computerPlayerId) >= 2 &&
+    !cpuPostRushSolarPacingArmed
+  ) {
     initPostRushSolarSchedule();
     cpuPostRushSolarPacingArmed = true;
   }

@@ -21,38 +21,67 @@ export function connectMatchAuthorityWs(options: {
 } {
   let canSend = false;
   let userClosed = false;
-  const ws = new WebSocket(options.url);
+  let reconnectTimer: number | null = null;
+  let reconnectAttempt = 0;
+  let ws: WebSocket | null = null;
+  const pendingCommands: Array<{ commandType: string; payload?: Record<string, unknown> }> = [];
   const triedUrl = options.url;
 
-  ws.onopen = () => {
-    ws.send(JSON.stringify({ type: "hello", seat: options.seat, room: options.room }));
+  const flushPendingCommands = (): void => {
+    if (!canSend || ws?.readyState !== WebSocket.OPEN) return;
+    const batch = pendingCommands.splice(0, pendingCommands.length);
+    for (const cmd of batch) {
+      ws.send(JSON.stringify({ type: "game_command", commandType: cmd.commandType, payload: cmd.payload }));
+    }
   };
 
-  ws.onmessage = (ev) => {
-    let msg: unknown;
-    try {
-      msg = JSON.parse(String(ev.data));
-    } catch {
-      options.onError("invalid_json");
-      return;
-    }
-    if (!msg || typeof msg !== "object") return;
-    const m = msg as Record<string, unknown>;
-    if (m.type === "error") {
-      options.onError(String(m.reason ?? "server_error"));
-      return;
-    }
-    if (m.type === "room_status") {
-      options.onPush({
-        roomReady: m.roomReady === true,
-        seats: parseSeatStatus(m.seats)
-      });
-      return;
-    }
-    if (m.type === "hello_ok") {
-      canSend = true;
-      options.onCommandsReady();
-      if (m.state != null) {
+  const connect = (): void => {
+    if (userClosed) return;
+    const socket = new WebSocket(options.url);
+    ws = socket;
+
+    socket.onopen = () => {
+      reconnectAttempt = 0;
+      socket.send(JSON.stringify({ type: "hello", seat: options.seat, room: options.room }));
+    };
+
+    socket.onmessage = (ev) => {
+      let msg: unknown;
+      try {
+        msg = JSON.parse(String(ev.data));
+      } catch {
+        options.onError("invalid_json");
+        return;
+      }
+      if (!msg || typeof msg !== "object") return;
+      const m = msg as Record<string, unknown>;
+      if (m.type === "error") {
+        options.onError(String(m.reason ?? "server_error"));
+        return;
+      }
+      if (m.type === "room_status") {
+        options.onPush({
+          roomReady: m.roomReady === true,
+          seats: parseSeatStatus(m.seats)
+        });
+        return;
+      }
+      if (m.type === "hello_ok") {
+        canSend = true;
+        options.onCommandsReady();
+        flushPendingCommands();
+        if (m.state != null) {
+          options.onPush({
+            state: m.state,
+            events: m.events,
+            feedback: m.feedback,
+            roomReady: m.roomReady === true,
+            seats: parseSeatStatus(m.seats)
+          });
+        }
+        return;
+      }
+      if (m.type === "tick" && m.state != null) {
         options.onPush({
           state: m.state,
           events: m.events,
@@ -61,47 +90,50 @@ export function connectMatchAuthorityWs(options: {
           seats: parseSeatStatus(m.seats)
         });
       }
-      return;
-    }
-    if (m.type === "tick" && m.state != null) {
-      options.onPush({
-        state: m.state,
-        events: m.events,
-        feedback: m.feedback,
-        roomReady: m.roomReady === true,
-        seats: parseSeatStatus(m.seats)
-      });
-    }
+    };
+
+    /** `onerror` usually precedes `onclose`; use `onclose` for codes so the user sees one clear reason. */
+    socket.onerror = () => {};
+
+    socket.onclose = (ev: CloseEvent) => {
+      if (userClosed || ws !== socket) return;
+      canSend = false;
+      const delayMs = Math.min(5000, 350 * 2 ** reconnectAttempt);
+      reconnectAttempt += 1;
+      if (reconnectAttempt <= 2) {
+        options.onError(
+          `reconnecting (${triedUrl} · ws ${ev.code}${ev.reason ? ` ${ev.reason}` : ""})`
+        );
+      }
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, delayMs);
+    };
   };
 
-  /** `onerror` usually precedes `onclose`; use `onclose` for codes so the user sees one clear reason. */
-  ws.onerror = () => {};
-
-  ws.onclose = (ev: CloseEvent) => {
-    if (userClosed) return;
-    if (canSend) {
-      options.onError(`disconnected (${triedUrl} · ws ${ev.code}${ev.reason ? ` ${ev.reason}` : ""})`);
-      return;
-    }
-    options.onError(
-      `connect_failed url=${triedUrl} · ws_close=${ev.code}` +
-        (ev.reason ? ` · ${ev.reason}` : "") +
-        " · (is npm run match:dev up on that port?)"
-    );
-  };
+  connect();
 
   return {
     close: () => {
       userClosed = true;
       canSend = false;
-      ws.close();
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      ws?.close();
     },
     sendGameCommand: (commandType: string, payload?: Record<string, unknown>) => {
-      if (!canSend || ws.readyState !== WebSocket.OPEN) return;
+      if (!canSend || ws?.readyState !== WebSocket.OPEN) {
+        pendingCommands.push({ commandType, payload });
+        if (pendingCommands.length > 128) pendingCommands.splice(0, pendingCommands.length - 128);
+        return;
+      }
       ws.send(JSON.stringify({ type: "game_command", commandType, payload }));
     },
     get canSendCommands(): boolean {
-      return canSend && ws.readyState === WebSocket.OPEN;
+      return canSend && ws?.readyState === WebSocket.OPEN;
     }
   };
 }
